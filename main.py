@@ -1,17 +1,15 @@
-import sqlite3
 from datetime import datetime
 
+import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import collections
 
 from src.database import Database
 from src.monitor.listen import MonitorListen
-from src.setting import DB_FILE, SAVE_THRESHOLD
+from src.setting import CONFIG
 
 # --- 核心逻辑 ---
-db = Database(DB_FILE)
+db = Database(CONFIG.db_file)
 monitor = MonitorListen(db)
 # --- FastAPI Web 服务器逻辑 ---
 app = FastAPI()
@@ -37,7 +35,6 @@ def get_keycounts():
     return monitor.get_keycounts()
 
 
-
 @app.get("/history")
 def get_history(start: str, end: str):
     """ API 端点: 根据日期区间查询并合并历史数据 """
@@ -53,6 +50,6 @@ def get_history(start: str, end: str):
 # --- 主程序入口 ---
 if __name__ == '__main__':
     print("全功能键盘鼠标记录器后端启动中...")
-    print(f"每 {SAVE_THRESHOLD} 次点击将自动保存数据到 {DB_FILE}")
+    print(f"每 {CONFIG.save_threshold} 次点击将自动保存数据到 {CONFIG.db_file}")
     print("在浏览器中打开 index.html 文件以查看。")
     uvicorn.run(app, host="0.0.0.0", port=5000, log_config=None)

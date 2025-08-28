@@ -7,7 +7,7 @@ from datetime import datetime
 from pynput import keyboard, mouse
 
 from src.monitor.maps import VK_MAP
-from src.setting import SAVE_THRESHOLD
+from src.setting import CONFIG
 
 
 class MonitorListen:
@@ -59,7 +59,7 @@ class MonitorListen:
             self.incremental_counts[key_name] += 1
             self.total_clicks_since_save += 1
 
-            if self.total_clicks_since_save >= SAVE_THRESHOLD:
+            if self.total_clicks_since_save >= CONFIG.save_threshold:
                 self.save_to_db_locked()
 
     def get_key_name(self, key):
