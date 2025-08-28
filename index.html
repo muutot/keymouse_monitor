@@ -47,6 +47,7 @@
             flex-wrap: wrap;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
         }
+
         .controls-panel input[type="date"] {
             background-color: var(--key-bg);
             color: var(--key-text);
@@ -54,6 +55,7 @@
             border-radius: 5px;
             padding: 8px;
         }
+
         .controls-panel button {
             background-color: #bb86fc;
             color: #121212;
@@ -63,6 +65,7 @@
             cursor: pointer;
             font-weight: bold;
         }
+
         .status-display {
             font-style: italic;
             color: #aaa;
@@ -72,14 +75,15 @@
             display: grid;
             /* 定义列: Numpad, Main Keyboard, Controls */
             grid-template-columns: auto 1fr auto;
-            /* 定义行模板以实现精确对齐 */
+            /* 定义行模板以实现精确对齐, 并为TopN模块增加新行 */
             grid-template-rows:
                 [f-keys-start] auto [f-keys-end main-row1-start]   /* F区 / 功能区顶部 */
                 auto [main-row1-end main-row2-start]                /* 主键盘第1行 / 功能区中部 */
                 auto [main-row2-end main-row3-start]                /* 主键盘第2行 */
                 auto [main-row3-end main-row4-start]                /* 主键盘第3行 */
                 auto [main-row4-end main-row5-start]                /* 主键盘第4行 / 方向键 */
-                auto [main-row5-end]; /* 主键盘第5行 */
+                auto [main-row5-end top-n-start]                    /* 主键盘第5行 / TopN模块开始 */
+                auto [top-n-end]; /* TopN模块结束 */
             gap: 0 20px;
             align-items: start;
         }
@@ -261,7 +265,7 @@
             grid-area: 2 / 3 / 3 / 4;
         }
 
-         /* Mouse Monitor */
+        /* Mouse Monitor */
         .mouse-monitor {
             max-height: 70px;
             display: flex;
@@ -299,6 +303,57 @@
             justify-content: center;
             background-color: var(--key-bg);
             transition: all 0.1s ease;
+        }
+
+        /* --- 新增: Top N 模块样式 --- */
+        .top-n-area {
+            grid-column: 1 / -1; /* 关键: 让此模块横跨所有列以实现对齐 */
+            grid-row: top-n-start / top-n-end;
+            background-color: var(--keyboard-bg);
+            padding: 15px;
+            border-radius: 12px;
+            margin-top: 20px; /* 与上方键盘的间距 */
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .top-n-area h2 {
+            margin: 0 0 15px 0;
+            text-align: center;
+            color: #aaa;
+            font-size: 1.2em;
+            font-weight: normal;
+        }
+
+        .top-n-keys {
+            display: flex;
+            justify-content: center;
+            gap: var(--gap);
+            flex-wrap: wrap;
+        }
+
+        .top-key {
+            width: var(--key-height);
+            height: var(--key-height);
+            background-color: var(--key-bg);
+            border: 1px solid var(--key-border);
+            border-bottom-width: 5px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            padding: 5px;
+            box-sizing: border-box;
+
+            .key-count {
+                font-size: 19px;
+                color: #c19fcf;
+            }
+
+            .key-name {
+                font-size: 12px;
+            }
         }
     </style>
 </head>
@@ -475,6 +530,13 @@
             <div class="key arrow-right" data-key="right"><span class="key-name">→</span><span class="key-count">0</span></div>
         </div>
     </div>
+
+    <!-- --- 新增: Top N 模块HTML结构 --- -->
+    <div class="top-n-area">
+        <div class="top-n-keys" id="top-n-keys">
+            <!-- 此处内容将由JavaScript动态生成 -->
+        </div>
+    </div>
 </div>
 
 <script>
@@ -488,11 +550,18 @@
   const queryBtn = document.getElementById('query-history-btn');
   const liveBtn = document.getElementById('refresh-live-btn');
 
+  // --- 新增: 获取Top N模块的容器 ---
+  const topNContainer = document.getElementById('top-n-keys');
+  const TOP_N_COUNT = 22; // 定义要显示的数量
+
   /**
-   * Clears all key counts on the UI.
+   * Clears all key counts on the UI, including the Top N module.
    */
   function clearUI() {
     document.querySelectorAll('.key-count').forEach(el => el.textContent = '0');
+    if (topNContainer) {
+      topNContainer.innerHTML = ''; // 清空Top N模块
+    }
     lastLiveData = {}; // Reset the cache for live updates
   }
 
@@ -503,117 +572,198 @@
    * @param {boolean} animate - Whether to trigger the 'pressed' animation.
    */
   function updateElement(keyName, count, animate) {
-      const escapedKeyName = keyName.replace(/\\/g, '\\\\');
-      const elements = document.querySelectorAll(`[data-key="${escapedKeyName}"]`);
+    const escapedKeyName = keyName.replace(/\\/g, '\\\\');
+    const elements = document.querySelectorAll(`[data-key="${escapedKeyName}"]`);
 
-      elements.forEach(element => {
-          const countElement = element.querySelector('.key-count');
-          if (countElement) {
-              countElement.textContent = count;
-              if (animate) {
-                  element.classList.add('pressed');
-                  setTimeout(() => element.classList.remove('pressed'), 150);
-              }
-          }
-      });
+    elements.forEach(element => {
+      const countElement = element.querySelector('.key-count');
+      if (countElement) {
+        countElement.textContent = count;
+        if (animate) {
+          element.classList.add('pressed');
+          setTimeout(() => element.classList.remove('pressed'), 150);
+        }
+      }
+    });
   }
+
+  /**
+   * --- 新增: 更新Top N显示模块的函数 ---
+   * Updates the Top N display with the most frequent keys.
+   * @param {object} data - The key count data object.
+   */
+  function updateTopN(data) {
+    if (!topNContainer) return;
+
+    // 用于将内部key名称映射为更友好的显示名称
+    const keyNameMapping = {
+      'mouse_left': '左键',
+      'mouse_middle': '中键',
+      'mouse_right': '右键',
+      'space': 'Space',
+      'enter': "Enter",
+      'backspace': 'Backspace',
+      'shift_l': 'Shift_l',
+      'shift_r': 'Shift_r',
+      'ctrl_l': 'Ctrl_l',
+      'ctrl_r': 'Ctrl_r',
+      'alt_l': 'Alt_l',
+      'alt_r': 'Alt_r',
+      'tab': 'Tab',
+      'caps_lock': 'Caps',
+      'esc': 'ESC',
+      'up': '↑',
+      'down': '↓',
+      'left': '←',
+      'right': '→',
+      'mouse_x1': "左后侧键", // 左后侧键
+      'mouse_x2': "左前侧键"
+    };
+
+    // 1. 将数据对象转换为数组并排序
+    const sortedKeys = Object.entries(data)
+      .map(([key, count]) => ({key, count}))
+      .sort((a, b) => b.count - a.count);
+
+    // 2. 截取前N个
+    const topNKeys = sortedKeys.slice(0, TOP_N_COUNT);
+
+    // 3. 清空当前显示
+    topNContainer.innerHTML = '';
+
+    // 4. 创建并添加新元素
+    topNKeys.forEach(item => {
+      // 查找原始按键元素以获取其显示名称
+      const originalElement = document.querySelector(`[data-key="${item.key.replace(/\\/g, '\\\\')}"]`);
+      let displayName = item.key.toUpperCase(); // 默认显示
+      if (originalElement) {
+        const nameSpan = originalElement.querySelector('.key-name');
+        if (nameSpan && nameSpan.textContent.trim() !== '') {
+          displayName = nameSpan.textContent;
+        }
+      }
+      // 如果有特殊映射，则使用映射的名称
+      if (keyNameMapping[item.key]) {
+        displayName = keyNameMapping[item.key];
+      }
+
+
+      const keyElement = document.createElement('div');
+      keyElement.className = 'top-key';
+
+      const nameElement = document.createElement('span');
+      nameElement.className = 'key-name';
+      nameElement.textContent = displayName;
+
+      const countElement = document.createElement('span');
+      countElement.className = 'key-count';
+      countElement.textContent = item.count;
+
+      keyElement.appendChild(nameElement);
+      keyElement.appendChild(countElement);
+      topNContainer.appendChild(keyElement);
+    });
+  }
+
 
   /**
    * Fetches the latest live data and updates only the keys that have changed.
    */
   async function fetchLiveUpdate() {
-      try {
-          const response = await fetch(`${API_URL}/keycounts`);
-          if (!response.ok) throw new Error('Network response was not ok.');
+    try {
+      const response = await fetch(`${API_URL}/keycounts`);
+      if (!response.ok) throw new Error('Network response was not ok.');
 
-          const currentData = await response.json();
+      const currentData = await response.json();
 
-          // Combine keys from old and new data to catch all changes, including resets
-          const allKeys = new Set([...Object.keys(lastLiveData), ...Object.keys(currentData)]);
+      // Combine keys from old and new data to catch all changes, including resets
+      const allKeys = new Set([...Object.keys(lastLiveData), ...Object.keys(currentData)]);
 
-          allKeys.forEach(key => {
-              const oldValue = lastLiveData[key] || 0;
-              const newValue = currentData[key] || 0;
-              if (oldValue !== newValue) {
-                  updateElement(key, newValue, true); // Animate only if the value changed
-              }
-          });
+      allKeys.forEach(key => {
+        const oldValue = lastLiveData[key] || 0;
+        const newValue = currentData[key] || 0;
+        if (oldValue !== newValue) {
+          updateElement(key, newValue, true); // Animate only if the value changed
+        }
+      });
 
-          lastLiveData = currentData; // Update the cache for the next comparison
+      updateTopN(currentData); // --- 修改: 更新Top N模块
+      lastLiveData = currentData; // Update the cache for the next comparison
 
-      } catch (error) {
-          console.error('获取实时数据失败:', error);
-          stopLiveUpdates();
-          statusDisplay.textContent = '错误: 无法连接到后端服务';
-      }
+    } catch (error) {
+      console.error('获取实时数据失败:', error);
+      stopLiveUpdates();
+      statusDisplay.textContent = '错误: 无法连接到后端服务';
+    }
   }
 
   /**
    * Fetches historical data for the selected date range and displays it statically.
    */
   async function fetchHistory() {
-      const startDate = startDateInput.value;
-      const endDate = endDateInput.value;
-      if (!startDate || !endDate) {
-          alert('请选择开始和结束日期');
-          return;
+    const startDate = startDateInput.value;
+    const endDate = endDateInput.value;
+    if (!startDate || !endDate) {
+      alert('请选择开始和结束日期');
+      return;
+    }
+
+    stopLiveUpdates();
+    statusDisplay.textContent = `查询历史数据: ${startDate} 到 ${endDate}`;
+
+    try {
+      const response = await fetch(`${API_URL}/history?start=${startDate}&end=${endDate}`);
+      if (!response.ok) throw new Error('Network response was not ok.');
+
+      const historyData = await response.json();
+
+      clearUI(); // Clear the board before showing static history data
+
+      if (Object.keys(historyData).length === 0) {
+        statusDisplay.textContent += ' (该时间段无记录)';
+      } else {
+        // Update UI with static data, no animation
+        for (const keyName in historyData) {
+          updateElement(keyName, historyData[keyName], false);
+        }
+        updateTopN(historyData); // --- 修改: 更新Top N模块
       }
-
-      stopLiveUpdates();
-      statusDisplay.textContent = `查询历史数据: ${startDate} 到 ${endDate}`;
-
-      try {
-          const response = await fetch(`${API_URL}/history?start=${startDate}&end=${endDate}`);
-          if (!response.ok) throw new Error('Network response was not ok.');
-
-          const historyData = await response.json();
-
-          clearUI(); // Clear the board before showing static history data
-
-          if (Object.keys(historyData).length === 0) {
-               statusDisplay.textContent += ' (该时间段无记录)';
-          } else {
-              // Update UI with static data, no animation
-              for (const keyName in historyData) {
-                  updateElement(keyName, historyData[keyName], false);
-              }
-          }
-      } catch (error) {
-          console.error('获取历史数据失败:', error);
-          statusDisplay.textContent = '错误: 查询历史数据失败';
-      }
+    } catch (error) {
+      console.error('获取历史数据失败:', error);
+      statusDisplay.textContent = '错误: 查询历史数据失败';
+    }
   }
 
   /**
    * Starts the interval for fetching live data.
    */
   function startLiveUpdates() {
-      stopLiveUpdates(); // Ensure no multiple intervals are running
-      clearUI(); // Clear any previous history data from the board
-      statusDisplay.textContent = '当前模式: 实时数据';
-      fetchLiveUpdate(); // Fetch immediately to populate the board
-      liveUpdateInterval = setInterval(fetchLiveUpdate, 500);
+    stopLiveUpdates(); // Ensure no multiple intervals are running
+    clearUI(); // Clear any previous history data from the board
+    statusDisplay.textContent = '当前模式: 实时数据';
+    fetchLiveUpdate(); // Fetch immediately to populate the board
+    liveUpdateInterval = setInterval(fetchLiveUpdate, 500);
   }
 
   /**
    * Stops the interval for fetching live data.
    */
   function stopLiveUpdates() {
-      clearInterval(liveUpdateInterval);
+    clearInterval(liveUpdateInterval);
   }
 
   /**
    * Initializes the application, sets default dates, and attaches event listeners.
    */
   function initialize() {
-      const today = new Date().toISOString().split('T')[0];
-      startDateInput.value = today;
-      endDateInput.value = today;
+    const today = new Date().toISOString().split('T')[0];
+    startDateInput.value = today;
+    endDateInput.value = today;
 
-      queryBtn.addEventListener('click', fetchHistory);
-      liveBtn.addEventListener('click', startLiveUpdates);
+    queryBtn.addEventListener('click', fetchHistory);
+    liveBtn.addEventListener('click', startLiveUpdates);
 
-      startLiveUpdates(); // Start in live mode by default
+    startLiveUpdates(); // Start in live mode by default
   }
 
   window.addEventListener('load', initialize);
