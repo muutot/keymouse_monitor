@@ -124,8 +124,9 @@
         }
 
         .key .key-name {
-            font-size: 12px;
+            font-size: 16px;
             color: #aaa;
+            padding: 5px 0 1px 0;
         }
 
         .key .key-count {
@@ -332,8 +333,8 @@
         }
 
         .top-key {
-            width: var(--key-height);
-            height: var(--key-height);
+            min-width: var(--key-height);
+            min-height: var(--key-height);
             background-color: var(--key-bg);
             border: 1px solid var(--key-border);
             border-bottom-width: 5px;
@@ -347,12 +348,14 @@
             box-sizing: border-box;
 
             .key-count {
-                font-size: 19px;
+                font-size: 1.1em;
                 color: #c19fcf;
             }
 
             .key-name {
-                font-size: 12px;
+                font-size: 15px;
+                color: #aaa;
+                padding: 2px 0 3px 0;
             }
         }
     </style>
