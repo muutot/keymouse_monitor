@@ -543,7 +543,7 @@
   const API_URL = 'http://127.0.0.1:5000';
   let liveUpdateInterval;
   let lastLiveData = {};
-
+  let isHistory = false;
   const statusDisplay = document.getElementById('status-display');
   const startDateInput = document.getElementById('start-date');
   const endDateInput = document.getElementById('end-date');
@@ -553,16 +553,12 @@
   // --- 新增: 获取Top N模块的容器 ---
   const topNContainer = document.getElementById('top-n-keys');
   const TOP_N_COUNT = 22; // 定义要显示的数量
+  document.querySelectorAll('.key-count').forEach(el => el.textContent = '0');
 
   /**
    * Clears all key counts on the UI, including the Top N module.
    */
   function clearUI() {
-    document.querySelectorAll('.key-count').forEach(el => el.textContent = '0');
-    if (topNContainer) {
-      topNContainer.innerHTML = ''; // 清空Top N模块
-    }
-    lastLiveData = {}; // Reset the cache for live updates
   }
 
   /**
@@ -673,22 +669,28 @@
     try {
       const response = await fetch(`${API_URL}/keycounts`);
       if (!response.ok) throw new Error('Network response was not ok.');
-
+      let animate = true;
+      if (isHistory){
+        isHistory = false
+        animate = false
+      }
       const currentData = await response.json();
-
       // Combine keys from old and new data to catch all changes, including resets
       const allKeys = new Set([...Object.keys(lastLiveData), ...Object.keys(currentData)]);
-
+      let had_change = false;
       allKeys.forEach(key => {
         const oldValue = lastLiveData[key] || 0;
         const newValue = currentData[key] || 0;
         if (oldValue !== newValue) {
-          updateElement(key, newValue, true); // Animate only if the value changed
+          updateElement(key, newValue, animate); // Animate only if the value changed
+          had_change = true;
         }
       });
 
-      updateTopN(currentData); // --- 修改: 更新Top N模块
-      lastLiveData = currentData; // Update the cache for the next comparison
+      if (had_change) {
+        updateTopN(currentData); // --- 修改: 更新Top N模块
+        lastLiveData = currentData; // Update the cache for the next comparison
+      }
 
     } catch (error) {
       console.error('获取实时数据失败:', error);
@@ -728,6 +730,8 @@
         }
         updateTopN(historyData); // --- 修改: 更新Top N模块
       }
+      lastLiveData = historyData;
+      isHistory = true;
     } catch (error) {
       console.error('获取历史数据失败:', error);
       statusDisplay.textContent = '错误: 查询历史数据失败';
