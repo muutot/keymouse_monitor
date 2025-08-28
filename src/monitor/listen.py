@@ -7,7 +7,6 @@ from datetime import datetime
 from pynput import keyboard, mouse
 
 from src.monitor.maps import VK_MAP
-
 from src.setting import SAVE_THRESHOLD
 
 
@@ -32,7 +31,7 @@ class MonitorListen:
             print(f"数据库中没有找到 {today_str} 的数据，从零开始。")
 
     def start(self):
-        keyboard_listener = keyboard.Listener(on_press=self.on_press)
+        keyboard_listener = keyboard.Listener(on_release=self.on_release)
         mouse_listener = mouse.Listener(on_click=self.on_click)
 
         keyboard_thread = threading.Thread(target=keyboard_listener.start, daemon=True)
@@ -42,18 +41,8 @@ class MonitorListen:
         mouse_thread.start()
         print("键盘和鼠标监听器已启动。")
 
-    def on_press(self, key):
-        if hasattr(key, 'vk'):
-            key_name = VK_MAP.get(key.vk)
-        elif (key_code := getattr(key, "_value_")) and key_code.vk in VK_MAP:
-            key_name = VK_MAP.get(key._value_.vk)
-        elif hasattr(key, '_name_'):
-            key_name = key._name_
-        else:
-            try:
-                key_name = key.char.lower() if key.char else ''
-            except AttributeError:
-                key_name = str(key).replace('Key.', '')
+    def on_release(self, key):
+        key_name = self.get_key_name(key)
         self.handle_event(key_name)
 
     def on_click(self, x, y, button, pressed):
@@ -72,6 +61,20 @@ class MonitorListen:
 
             if self.total_clicks_since_save >= SAVE_THRESHOLD:
                 self.save_to_db_locked()
+
+    def get_key_name(self, key):
+        if hasattr(key, 'vk'):
+            key_name = VK_MAP.get(key.vk)
+        elif (key_code := getattr(key, "_value_")) and key_code.vk in VK_MAP:
+            key_name = VK_MAP.get(key._value_.vk)
+        elif hasattr(key, '_name_'):
+            key_name = key._name_
+        else:
+            try:
+                key_name = key.char.lower() if key.char else ''
+            except AttributeError:
+                key_name = str(key).replace('Key.', '')
+        return key_name
 
     def save_to_db_locked(self):
         """
