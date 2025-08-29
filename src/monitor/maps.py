@@ -67,3 +67,18 @@ VK_MAP = {
     116: 'f5', 117: 'f6', 118: 'f7', 119: 'f8',
     120: 'f9', 121: 'f10', 122: 'f11', 123: 'f12',
 }
+
+
+def get_key_name(key):
+    if hasattr(key, 'vk'):
+        key_name = VK_MAP.get(key.vk)
+    elif (key_code := getattr(key, "_value_")) and key_code.vk in VK_MAP:
+        key_name = VK_MAP.get(key._value_.vk)
+    elif hasattr(key, '_name_'):
+        key_name = key._name_
+    else:
+        try:
+            key_name = key.char.lower() if key.char else ''
+        except AttributeError:
+            key_name = str(key).replace('Key.', '')
+    return key_name

@@ -5,12 +5,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.database import Database
-from src.monitor.listen import MonitorListen
+from src.monitor import Monitor
 from src.setting import CONFIG
 
 # --- 核心逻辑 ---
 db = Database(CONFIG.db_file)
-monitor = MonitorListen(db)
+monitor = Monitor(db)
 # --- FastAPI Web 服务器逻辑 ---
 app = FastAPI()
 

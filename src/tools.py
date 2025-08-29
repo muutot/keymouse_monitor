@@ -10,3 +10,13 @@ def get_next_minute():
 
 def get_next_minute_interval():
     return (get_next_minute() - datetime.now()).total_seconds()
+
+
+def get_today_str():
+    return datetime.now().strftime('%Y-%m-%d')
+
+
+def check_cross_day(last_day):
+    if (today := get_today_str()) != last_day:
+        return today
+    return None

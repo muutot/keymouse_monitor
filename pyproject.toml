@@ -8,6 +8,5 @@ dependencies = [
     'fastapi',
     'uvicorn',
     'pynput',
-    "schedule>=1.2.2",
-    "apscheduler>=3.11.0",
+    "pyinstaller>=6.15.0",
 ]

@@ -8,7 +8,7 @@ class Config:
 
     db_file: str = "monitor.sqlite"
     save_threshold: int = 20
-    port: int = 8080
+    port: int = 5000
 
     def __init__(self):
         self.init_config()
