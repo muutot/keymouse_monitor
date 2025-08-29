@@ -19,7 +19,7 @@ class Monitor:
 
     def run_timer(self):
         self.data.save_to_db_locked("定时任务触发, ")
-        self.timer.timer_cycle(get_next_minute_interval(), self.run_timer)
+        self.timer.timer_once(get_next_minute_interval(), self.run_timer)
 
     def get_keycounts(self):
         return self.data.get_key_counts()
