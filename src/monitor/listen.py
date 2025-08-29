@@ -2,18 +2,20 @@
 import collections
 import threading
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pynput import keyboard, mouse
 
 from src.monitor.maps import VK_MAP
 from src.setting import CONFIG
+from src.tools import get_next_minute_interval
 
 
 class MonitorListen:
     base_counts_today: dict
     incremental_counts = collections.defaultdict(int)
     total_clicks_since_save = 0
+    today = 0
 
     def __init__(self, db):
         self.db = db
@@ -41,6 +43,14 @@ class MonitorListen:
         mouse_thread.start()
         print("键盘和鼠标监听器已启动。")
 
+        # 添加定时任务
+        self.run_timer()
+
+    def run_timer(self):
+        with self.data_lock:
+            self.save_to_db_locked("定时任务触发, ")
+        threading.Timer(get_next_minute_interval(), self.run_timer).start()  # 每60秒调用一次
+
     def on_release(self, key):
         key_name = self.get_key_name(key)
         self.handle_event(key_name)
@@ -62,7 +72,8 @@ class MonitorListen:
             if self.total_clicks_since_save >= CONFIG.save_threshold:
                 self.save_to_db_locked()
 
-    def get_key_name(self, key):
+    @staticmethod
+    def get_key_name(key):
         if hasattr(key, 'vk'):
             key_name = VK_MAP.get(key.vk)
         elif (key_code := getattr(key, "_value_")) and key_code.vk in VK_MAP:
@@ -76,7 +87,14 @@ class MonitorListen:
                 key_name = str(key).replace('Key.', '')
         return key_name
 
-    def save_to_db_locked(self):
+    def check_cross_day(self):
+        today = datetime.now().strftime('%Y-%m-%d')
+        if self.today != self.today:
+            self.today = today
+            return True
+        return False
+
+    def save_to_db_locked(self, prefix=""):
         """
         合并内存中的增量数据并保存到数据库。
         注意：此函数假定调用它的上下文已经持有了 data_lock。
@@ -94,10 +112,13 @@ class MonitorListen:
         self.db.upsert_day_stats(datetime.now().strftime('%Y-%m-%d'), total_today_counts)
 
         # 3. 更新内存中的基础数据，并清空增量计数器
-        self.base_counts_today = total_today_counts
+        if self.check_cross_day():
+            self.base_counts_today.clear()
+        else:
+            self.base_counts_today = total_today_counts
         self.incremental_counts.clear()
         self.total_clicks_since_save = 0
-        print(f"数据已合并并保存到数据库。当前时间: {datetime.now()}")
+        print(f"{prefix}数据已合并并保存到数据库。当前时间: {datetime.now()}")
 
     def get_keycounts(self):
         with self.data_lock:

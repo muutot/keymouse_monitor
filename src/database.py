@@ -19,13 +19,13 @@ class Database:
                        CREATE TABLE IF NOT EXISTS daily_stats
                        (
                            date
-                               TEXT
-                               PRIMARY
-                                   KEY,
+                           TEXT
+                           PRIMARY
+                           KEY,
                            data
-                               TEXT
-                               NOT
-                                   NULL
+                           TEXT
+                           NOT
+                           NULL
                        )
                        ''')
         self.conn.commit()

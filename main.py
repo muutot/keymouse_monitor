@@ -52,4 +52,4 @@ if __name__ == '__main__':
     print("全功能键盘鼠标记录器后端启动中...")
     print(f"每 {CONFIG.save_threshold} 次点击将自动保存数据到 {CONFIG.db_file}")
     print("在浏览器中打开 index.html 文件以查看。")
-    uvicorn.run(app, host="0.0.0.0", port=5000, log_config=None)
+    uvicorn.run(app, host="0.0.0.0", port=CONFIG.port, log_config=None)
