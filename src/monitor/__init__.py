@@ -15,11 +15,11 @@ class Monitor:
     def start(self):
         self.listen.start()
         # 添加定时任务
-        self.run_timer()
+        self.timer_to_save_data()
 
-    def run_timer(self):
+    def timer_to_save_data(self):
         self.data.save_to_db_locked("定时任务触发, ")
-        self.timer.timer_once(get_next_minute_interval(), self.run_timer)
+        self.timer.timer_once(get_next_minute_interval(), self.timer_to_save_data)
 
     def get_keycounts(self):
         return self.data.get_key_counts()
