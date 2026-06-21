@@ -1,2 +1,6 @@
 monitor.sqlite
 __pycache__/
+monitor.spec
+monitor.sqlite-journal
+dist
+build
