@@ -1,0 +1,7 @@
+monitor.sqlite
+monitor.sqlite-journal
+config.json
+
+# Rust
+target/
+Cargo.lock
