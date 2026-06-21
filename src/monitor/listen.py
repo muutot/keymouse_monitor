@@ -19,7 +19,7 @@ class MonitorListen:
 
     def start(self):
         keyboard_listener = keyboard.Listener(on_release=self.on_release)
-        mouse_listener = mouse.Listener(on_click=self.on_click)
+        mouse_listener = mouse.Listener(on_click=self.on_click, on_scroll=self.on_scroll)
 
         keyboard_thread = threading.Thread(target=keyboard_listener.start, daemon=True)
         mouse_thread = threading.Thread(target=mouse_listener.start, daemon=True)
@@ -37,6 +37,16 @@ class MonitorListen:
             return
         button_name = f"mouse_{str(button).replace('Button.', '')}"
         self.handle_event(button_name)
+
+    def on_scroll(self, x, y, dx, dy):
+        if dy > 0:
+            self.handle_event("mouse_scroll_up")
+        elif dy < 0:
+            self.handle_event("mouse_scroll_down")
+        if dx > 0:
+            self.handle_event("mouse_scroll_right")
+        elif dx < 0:
+            self.handle_event("mouse_scroll_left")
 
     def handle_event(self, key_name: str):
         """统一处理键盘和鼠标事件"""
