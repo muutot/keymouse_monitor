@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="static/svg/logo_monitor.svg">
+    <title>键盘鼠标点击监控 - 最终布局</title>
+    <style>
+        :root {
+            --key-bg: #2e2e2e;
+            --key-bg-active: #bb86fc;
+            --key-text: #e0e0e0;
+            --key-border: #444;
+            --key-count-text: #03dac6;
+            --keyboard-bg: #1e1e1e;
+            --gap: 8px;
+            --key-height: 70px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #121212;
+            color: var(--key-text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+
+        .logo-icon {
+            width: 52px;
+            height: 52px;
+            flex-shrink: 0;
+        }
+
+        .logo-text h1 {
+            color: #bb86fc;
+            margin: 0;
+            font-size: 24px;
+            text-align: left;
+        }
+
+        .logo-text .subtitle {
+            color: #888;
+            font-size: 12px;
+            margin: 2px 0 0 0;
+            letter-spacing: 0.5px;
+        }
+
+        .controls-panel {
+            background-color: var(--keyboard-bg);
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .controls-panel input[type="date"] {
+            background-color: var(--key-bg);
+            color: var(--key-text);
+            border: 1px solid var(--key-border);
+            border-radius: 5px;
+            padding: 8px;
+        }
+
+        .controls-panel button {
+            background-color: #bb86fc;
+            color: #121212;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .status-display {
+            font-style: italic;
+            color: #aaa;
+        }
+
+        .keyboard-container {
+            display: grid;
+            /* 定义列: Numpad, Main Keyboard, Controls */
+            grid-template-columns: auto 1fr auto;
+            /* 定义行模板以实现精确对齐 */
+            grid-template-rows:
+                [f-keys-start] auto [f-keys-end main-row1-start]   /* F区 / 功能区顶部 */
+                auto [main-row1-end main-row2-start]                /* 主键盘第1行 / 功能区中部 */
+                auto [main-row2-end main-row3-start]                /* 主键盘第2行 */
+                auto [main-row3-end main-row4-start]                /* 主键盘第3行 */
+                auto [main-row4-end main-row5-start]                /* 主键盘第4行 / 方向键 */
+                auto [main-row5-end];                               /* 主键盘第5行 */
+            gap: 0 20px;
+            align-items: start;
+        }
+
+        .keyboard {
+            display: flex;
+            flex-direction: column;
+            gap: var(--gap);
+            padding: 15px;
+            background-color: var(--keyboard-bg);
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .keyboard-row {
+            display: flex;
+            justify-content: center;
+            gap: var(--gap);
+        }
+
+        .key {
+            background-color: var(--key-bg);
+            border: 1px solid var(--key-border);
+            border-bottom-width: 5px;
+            border-radius: 8px;
+            height: var(--key-height);
+            min-width: var(--key-height);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            transition: all 0.1s ease;
+            position: relative;
+            padding: 5px;
+            box-sizing: border-box;
+            flex: 1 1 0;
+        }
+
+        .key .key-name {
+            font-size: 16px;
+            color: #aaa;
+            padding: 5px 0 1px 0;
+        }
+
+        .key .key-count {
+            font-size: 1.1em;
+            color: var(--key-count-text);
+        }
+
+        .key.pressed {
+            transform: translateY(4px);
+            border-bottom-width: 1px;
+            background-color: var(--key-bg-active);
+        }
+
+        /* Grid Layout Specifics */
+        .numpad-area {
+            grid-column: 3;
+            grid-row: main-row1-start / main-row5-end;
+        }
+
+        .function-keys {
+            grid-column: 1;
+            grid-row: f-keys-start / f-keys-end;
+            margin-bottom: 10px;
+        }
+
+        .main-keyboard {
+            grid-column: 1;
+            grid-row: main-row1-start / main-row5-end;
+        }
+
+        .controls-top {
+            grid-column: 2;
+            grid-row: f-keys-start / f-keys-end;
+        }
+
+        .controls-middle {
+            grid-column: 2;
+            grid-row: main-row1-start / main-row2-end;
+        }
+
+        .controls-bottom {
+            grid-column: 2;
+            grid-row: main-row4-start / main-row5-end;
+            display: flex;
+            align-items: flex-end;
+        }
+
+        /* Fixed width keys */
+        .key-fixed {
+            flex-grow: 0;
+        }
+
+        .key-backspace {
+            flex-basis: 160px;
+        }
+
+        .key-tab {
+            flex-basis: 110px;
+        }
+
+        .key-capslock {
+            flex-basis: 130px;
+        }
+
+        .key-enter {
+            flex-basis: 170px;
+        }
+
+        .key-shift-left, .key-shift-right {
+            flex-basis: 180px;
+        }
+
+        .key-space {
+            flex-basis: 450px;
+            flex-grow: 8;
+        }
+
+        .key-ctrl, .key-alt, .key-meta, .key-menu {
+            flex-basis: 85px;
+        }
+
+        /* Numpad Area - REBUILT WITH CSS GRID */
+        .numpad-area {
+            display: grid;
+            grid-template-columns: repeat(4, var(--key-height));
+            grid-template-rows: repeat(5, var(--key-height));
+            gap: var(--gap);
+        }
+
+        .numpad-area .key {
+            flex: auto; /* Override flex behavior */
+            width: auto;
+            height: auto;
+        }
+
+        .numpad-zero {
+            grid-column: 1 / 3;
+        }
+
+        .numpad-plus {
+            grid-row: 2 / 4;
+            grid-column: 4;
+        }
+
+        .numpad-enter {
+            grid-row: 4 / 6;
+            grid-column: 4;
+        }
+
+        /* Arrow Keys */
+        .arrow-keys {
+            display: grid;
+            grid-template-columns: repeat(3, var(--key-height));
+            grid-template-rows: repeat(2, var(--key-height));
+            gap: var(--gap);
+        }
+
+        .arrow-keys .key {
+            flex: none; /* Override flex properties */
+            width: var(--key-height);
+            height: var(--key-height);
+        }
+
+        .arrow-up {
+            grid-area: 1 / 2 / 2 / 3;
+        }
+
+        .arrow-left {
+            grid-area: 2 / 1 / 3 / 2;
+        }
+
+        .arrow-down {
+            grid-area: 2 / 2 / 3 / 3;
+        }
+
+        .arrow-right {
+            grid-area: 2 / 3 / 3 / 4;
+        }
+
+        /* Main Content - Keyboard + Mouse side by side */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            width: fit-content;
+        }
+
+        .keyboard-and-mouse {
+            display: flex;
+            gap: 30px;
+            align-items: start;
+            justify-content: center;
+        }
+
+        /* Mouse Section - Visual Mouse Shape */
+        .mouse-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex-shrink: 0;
+            align-self: flex-end;
+            order: -1;
+        }
+
+            .mouse-visual {
+            position: relative;
+            width: 200px;
+            height: 420px;
+        }
+
+        .mouse-body {
+            position: relative;
+            width: 200px;
+            height: 420px;
+            background: linear-gradient(180deg, #303030 0%, #2a2a2a 40%, #262626 100%);
+            border: 2px solid var(--key-border);
+            border-radius: 50px 50px 80px 80px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5),
+                        inset 0 1px 0 rgba(255,255,255,0.04);
+            overflow: hidden;
+        }
+
+        /* Center divider line */
+        .mouse-body::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 15px;
+            width: 2px;
+            height: 115px;
+            background: var(--key-border);
+            transform: translateX(-50%);
+            z-index: 1;
+        }
+
+        /* Scroll wheel visual */
+        .mouse-wheel {
+            position: absolute;
+            left: 50%;
+            top: 42px;
+            width: 16px;
+            height: 36px;
+            background: #444;
+            border: 2px solid #555;
+            border-radius: 8px;
+            transform: translateX(-50%);
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* Mouse zone base */
+        .mouse-zone {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.1s ease;
+            cursor: pointer;
+            box-sizing: border-box;
+            border-bottom: 2px solid transparent;
+        }
+
+        .mouse-zone .key-name {
+            font-size: 16px;
+            color: #aaa;
+            line-height: 1.2;
+        }
+
+        .mouse-zone .key-count {
+            font-size: 1.1em;
+            color: var(--key-count-text);
+            font-weight: bold;
+            line-height: 1.2;
+        }
+
+        .mouse-zone:hover {
+            background: rgba(187, 134, 252, 0.1);
+        }
+
+        .mouse-zone.pressed {
+            background: rgba(187, 134, 252, 0.25);
+        }
+
+        /* Left button */
+        .mz-left {
+            left: 5px;
+            top: 5px;
+            width: 90px;
+            height: 130px;
+            border-radius: 45px 5px 5px 5px;
+            z-index: 3;
+            background: rgba(255, 255, 255, 0.02);
+        }
+        /* Right button */
+        .mz-right {
+            right: 5px;
+            top: 5px;
+            width: 90px;
+            height: 130px;
+            border-radius: 5px 45px 5px 5px;
+            z-index: 3;
+            background: rgba(255, 255, 255, 0.02);
+        }
+        /* Middle button - on scroll wheel (moved down below wheel) */
+        .mz-middle {
+            left: 50%;
+            top: 94px;
+            width: 72px;
+            height: 36px;
+            transform: translateX(-50%);
+            z-index: 5;
+            border-radius: 6px;
+        }
+        .mz-middle .key-count {
+            font-size: 1.1em;
+        }
+
+        /* Scroll up - bottom area, top row centered */
+        .mz-scroll-up {
+            left: 50%;
+            top: 270px;
+            width: 85px;
+            height: 46px;
+            transform: translateX(-50%);
+            z-index: 4;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .mz-scroll-up {
+            border-bottom-color: rgba(3, 218, 198, 0.25);
+        }
+
+        /* Scroll down - bottom area, bottom row centered */
+        .mz-scroll-down {
+            left: 50%;
+            top: 370px;
+            width: 85px;
+            height: 46px;
+            transform: translateX(-50%);
+            z-index: 4;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .mz-scroll-down {
+            border-bottom-color: rgba(3, 218, 198, 0.25);
+        }
+
+        /* Scroll left direction - bottom area, middle row left */
+        .mz-scroll-left-dir {
+            left: 10px;
+            top: 320px;
+            width: 85px;
+            height: 46px;
+            z-index: 4;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .mz-scroll-left-dir .key-count {
+            font-size: 1.1em;
+        }
+        .mz-scroll-left-dir {
+            border-bottom-color: rgba(3, 218, 198, 0.2);
+        }
+
+        /* Scroll right direction - bottom area, middle row right */
+        .mz-scroll-right-dir {
+            right: 10px;
+            top: 320px;
+            width: 85px;
+            height: 46px;
+            z-index: 4;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .mz-scroll-right-dir .key-count {
+            font-size: 1.1em;
+        }
+        .mz-scroll-right-dir {
+            border-bottom-color: rgba(3, 218, 198, 0.2);
+        }
+
+        /* Scroll left - right side button (右后侧键) */
+        .mz-scroll-left {
+            right: 8px;
+            top: 210px;
+            width: 85px;
+            height: 55px;
+            border-radius: 8px;
+            z-index: 3;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .mz-scroll-left::after {
+            content: '';
+            position: absolute;
+            right: -6px;
+            top: 50%;
+            width: 6px;
+            height: 14px;
+            background: #3a3a3a;
+            border-radius: 0 3px 3px 0;
+            transform: translateY(-50%);
+        }
+        .mz-scroll-left {
+            border-bottom-color: rgba(187, 134, 252, 0.25);
+        }
+
+        /* Scroll right - right side button (右前侧键) */
+        .mz-scroll-right {
+            right: 8px;
+            top: 150px;
+            width: 85px;
+            height: 55px;
+            border-radius: 8px;
+            z-index: 3;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+        .mz-scroll-right::after {
+            content: '';
+            position: absolute;
+            right: -6px;
+            top: 50%;
+            width: 6px;
+            height: 14px;
+            background: #3a3a3a;
+            border-radius: 0 3px 3px 0;
+            transform: translateY(-50%);
+        }
+        .mz-scroll-right {
+            border-bottom-color: rgba(187, 134, 252, 0.25);
+        }
+
+        /* Left side button: X1 (左后侧键) - left column, row 1 */
+        .mz-x1 {
+            left: 8px;
+            top: 210px;
+            width: 85px;
+            height: 55px;
+            border-radius: 8px;
+            z-index: 3;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .mz-x1::before {
+            content: '';
+            position: absolute;
+            left: -6px;
+            top: 50%;
+            width: 6px;
+            height: 14px;
+            background: #3a3a3a;
+            border-radius: 3px 0 0 3px;
+            transform: translateY(-50%);
+        }
+        .mz-x1 {
+            border-bottom-color: rgba(187, 134, 252, 0.25);
+        }
+
+        /* Left side button: X2 (左前侧键) - left column, row 2 */
+        .mz-x2 {
+            left: 8px;
+            top: 150px;
+            width: 85px;
+            height: 55px;
+            border-radius: 8px;
+            z-index: 3;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .mz-x2::before {
+            content: '';
+            position: absolute;
+            left: -6px;
+            top: 50%;
+            width: 6px;
+            height: 14px;
+            background: #3a3a3a;
+            border-radius: 3px 0 0 3px;
+            transform: translateY(-50%);
+        }
+        .mz-x2 {
+            border-bottom-color: rgba(187, 134, 252, 0.25);
+        }
+
+        /* --- 新增: Top N 模块样式 --- */
+        .top-n-area {
+            align-self: stretch;
+            background-color: var(--keyboard-bg);
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .top-n-area h2 {
+            margin: 0 0 15px 0;
+            text-align: center;
+            color: #aaa;
+            font-size: 1.2em;
+            font-weight: normal;
+        }
+
+        .top-n-keys {
+            display: flex;
+            justify-content: center;
+            gap: var(--gap);
+            flex-wrap: wrap;
+        }
+
+        .top-key {
+            min-width: var(--key-height);
+            min-height: var(--key-height);
+            background-color: var(--key-bg);
+            border: 1px solid var(--key-border);
+            border-bottom-width: 5px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            padding: 5px;
+            box-sizing: border-box;
+
+            .key-count {
+                font-size: 1.1em;
+                color: #c19fcf;
+            }
+
+            .key-name {
+                font-size: 15px;
+                color: #aaa;
+                padding: 2px 0 3px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="logo-container">
+    <svg class="logo-icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg">
+        <path d="M877.653333 0c58.026667 0 106.24 47.104 109.568 107.52l0.256 6.741333v152.149334c22.357333 21.589333 36.522667 53.077333 36.522667 87.978666v367.104c0 146.346667-97.28 271.786667-231.082667 297.728-133.802667 25.941333-265.642667-55.04-313.002666-192.256H109.653333c-58.026667 0-106.154667-47.104-109.482666-107.52L0 712.704V114.346667C0 52.906667 46.08 3.669333 103.253333 0.170667L109.653333 0h768zM561.664 306.602667a35.242667 35.242667 0 0 0-25.941333 11.52 40.96 40.96 0 0 0-10.666667 27.904v379.050666c1.536 122.282667 104.533333 220.586667 218.112 220.586667 113.664 0 217.173333-98.304 218.709333-220.586667V346.026667a40.96 40.96 0 0 0-10.666666-27.818667 35.242667 35.242667 0 0 0-25.941334-11.52H561.664z m323.157333-235.52H102.741333a36.096 36.096 0 0 0-36.266666 31.402666l-0.256 4.010667V717.653333c0 17.749333 13.738667 33.109333 32.170666 35.242667l4.352 0.256h360.704a322.474667 322.474667 0 0 1-1.024-26.709333l-0.085333-371.968c0-62.549333 45.312-114.261333 103.253333-117.930667l6.4-0.170667h349.44v-129.706666a36.010667 36.010667 0 0 0-32.256-35.242667l-4.266666-0.256z" fill="#bb86fc"/>
+        <path d="M256 551.253333v78.762667h-73.130667V551.253333zM462.336 551.253333v78.762667h-133.12V551.253333zM768 393.813333V551.253333h-73.130667V393.813333zM256 354.389333v78.762667h-73.130667v-78.762667zM402.261333 354.389333v78.762667h-73.130666v-78.762667zM256 157.525333v78.762667h-73.130667v-78.762667zM402.261333 157.525333v78.762667h-73.130666v-78.762667zM548.522667 157.525333v78.762667h-73.045334v-78.762667h72.96z" fill="#03dac6"/>
+    </svg>
+    <div class="logo-text">
+        <h1>键盘 & 鼠标点击监控</h1>
+        <p class="subtitle">Key &amp; Mouse Click Monitor</p>
+    </div>
+</div>
+
+<div class="controls-panel">
+    <label for="start-date">开始日期:</label>
+    <input type="date" id="start-date">
+    <label for="end-date">结束日期:</label>
+    <input type="date" id="end-date">
+    <button id="query-history-btn">查询历史</button>
+    <button id="refresh-live-btn">刷新实时数据</button>
+    <div class="status-display" id="status-display">当前模式: 实时数据</div>
+</div>
+
+<div class="main-content">
+<div class="keyboard-and-mouse">
+<div class="keyboard-container">
+
+    <div class="keyboard numpad-area">
+        <!-- Row 1 -->
+        <div class="key" data-key="numpad_lock"><span class="key-name">Num</span><span class="key-count">0</span></div>
+        <div class="key" data-key="numpad_divide"><span class="key-name">/</span><span class="key-count">0</span></div>
+        <div class="key" data-key="numpad_multiply"><span class="key-name">*</span><span class="key-count">0</span></div>
+        <div class="key" data-key="numpad_subtract"><span class="key-name">-</span><span class="key-count">0</span></div>
+        <!-- Row 2 -->
+        <div class="key" data-key="numpad7"><span class="key-name">7</span><span class="key-count">0</span></div>
+        <div class="key" data-key="numpad8"><span class="key-name">8</span><span class="key-count">0</span></div>
+        <div class="key" data-key="numpad9"><span class="key-name">9</span><span class="key-count">0</span></div>
+        <div class="key numpad-plus" data-key="numpad_add"><span class="key-name">+</span><span class="key-count">0</span></div>
+        <!-- Row 3 -->
+        <div class="key" data-key="numpad4"><span class="key-name">4</span><span class="key-count">0</span></div>
+        <div class="key" data-key="numpad5"><span class="key-name">5</span><span class="key-count">0</span></div>
+        <div class="key" data-key="numpad6"><span class="key-name">6</span><span class="key-count">0</span></div>
+        <!-- Row 4 -->
+        <div class="key" data-key="numpad1"><span class="key-name">1</span><span class="key-count">0</span></div>
+        <div class="key" data-key="numpad2"><span class="key-name">2</span><span class="key-count">0</span></div>
+        <div class="key" data-key="numpad3"><span class="key-name">3</span><span class="key-count">0</span></div>
+        <div class="key numpad-enter" data-key="numpad_enter"><span class="key-name">Ent</span><span class="key-count">0</span></div>
+        <!-- Row 5 -->
+        <div class="key numpad-zero" data-key="numpad0"><span class="key-name">0</span><span class="key-count">0</span></div>
+        <div class="key" data-key="numpad_decimal"><span class="key-name">.</span><span class="key-count">0</span></div>
+    </div>
+
+
+    <div class="keyboard function-keys">
+        <div class="keyboard-row">
+            <div class="key key-fixed" style="width: 70px;" data-key="esc"><span class="key-name">ESC</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f1"><span class="key-name">F1</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f2"><span class="key-name">F2</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f3"><span class="key-name">F3</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f4"><span class="key-name">F4</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f5"><span class="key-name">F5</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f6"><span class="key-name">F6</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f7"><span class="key-name">F7</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f8"><span class="key-name">F8</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f9"><span class="key-name">F9</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f10"><span class="key-name">F10</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f11"><span class="key-name">F11</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f12"><span class="key-name">F12</span><span class="key-count">0</span></div>
+        </div>
+    </div>
+
+    <div class="keyboard main-keyboard">
+        <div class="keyboard-row">
+            <div class="key" data-key="`"><span class="key-name">`</span><span class="key-count">0</span></div>
+            <div class="key" data-key="1"><span class="key-name">1</span><span class="key-count">0</span></div>
+            <div class="key" data-key="2"><span class="key-name">2</span><span class="key-count">0</span></div>
+            <div class="key" data-key="3"><span class="key-name">3</span><span class="key-count">0</span></div>
+            <div class="key" data-key="4"><span class="key-name">4</span><span class="key-count">0</span></div>
+            <div class="key" data-key="5"><span class="key-name">5</span><span class="key-count">0</span></div>
+            <div class="key" data-key="6"><span class="key-name">6</span><span class="key-count">0</span></div>
+            <div class="key" data-key="7"><span class="key-name">7</span><span class="key-count">0</span></div>
+            <div class="key" data-key="8"><span class="key-name">8</span><span class="key-count">0</span></div>
+            <div class="key" data-key="9"><span class="key-name">9</span><span class="key-count">0</span></div>
+            <div class="key" data-key="0"><span class="key-name">0</span><span class="key-count">0</span></div>
+            <div class="key" data-key="-"><span class="key-name">-</span><span class="key-count">0</span></div>
+            <div class="key" data-key="="><span class="key-name">=</span><span class="key-count">0</span></div>
+            <div class="key key-fixed key-backspace" data-key="backspace"><span class="key-name">Backspace</span><span class="key-count">0</span></div>
+        </div>
+        <div class="keyboard-row">
+            <div class="key key-fixed key-tab" data-key="tab"><span class="key-name">Tab</span><span class="key-count">0</span></div>
+            <div class="key" data-key="q"><span class="key-name">Q</span><span class="key-count">0</span></div>
+            <div class="key" data-key="w"><span class="key-name">W</span><span class="key-count">0</span></div>
+            <div class="key" data-key="e"><span class="key-name">E</span><span class="key-count">0</span></div>
+            <div class="key" data-key="r"><span class="key-name">R</span><span class="key-count">0</span></div>
+            <div class="key" data-key="t"><span class="key-name">T</span><span class="key-count">0</span></div>
+            <div class="key" data-key="y"><span class="key-name">Y</span><span class="key-count">0</span></div>
+            <div class="key" data-key="u"><span class="key-name">U</span><span class="key-count">0</span></div>
+            <div class="key" data-key="i"><span class="key-name">I</span><span class="key-count">0</span></div>
+            <div class="key" data-key="o"><span class="key-name">O</span><span class="key-count">0</span></div>
+            <div class="key" data-key="p"><span class="key-name">P</span><span class="key-count">0</span></div>
+            <div class="key" data-key="["><span class="key-name">[</span><span class="key-count">0</span></div>
+            <div class="key" data-key="]"><span class="key-name">]</span><span class="key-count">0</span></div>
+            <div class="key" data-key="backslash"><span class="key-name">\</span><span class="key-count">0</span></div>
+        </div>
+        <div class="keyboard-row">
+            <div class="key key-fixed key-capslock" data-key="caps_lock"><span class="key-name">Caps</span><span class="key-count">0</span></div>
+            <div class="key" data-key="a"><span class="key-name">A</span><span class="key-count">0</span></div>
+            <div class="key" data-key="s"><span class="key-name">S</span><span class="key-count">0</span></div>
+            <div class="key" data-key="d"><span class="key-name">D</span><span class="key-count">0</span></div>
+            <div class="key" data-key="f"><span class="key-name">F</span><span class="key-count">0</span></div>
+            <div class="key" data-key="g"><span class="key-name">G</span><span class="key-count">0</span></div>
+            <div class="key" data-key="h"><span class="key-name">H</span><span class="key-count">0</span></div>
+            <div class="key" data-key="j"><span class="key-name">J</span><span class="key-count">0</span></div>
+            <div class="key" data-key="k"><span class="key-name">K</span><span class="key-count">0</span></div>
+            <div class="key" data-key="l"><span class="key-name">L</span><span class="key-count">0</span></div>
+            <div class="key" data-key=";"><span class="key-name">;</span><span class="key-count">0</span></div>
+            <div class="key" data-key="'"><span class="key-name">'</span><span class="key-count">0</span></div>
+            <div class="key key-fixed key-enter" data-key="enter"><span class="key-name">Enter</span><span class="key-count">0</span></div>
+        </div>
+        <div class="keyboard-row">
+            <div class="key key-fixed key-shift-left" data-key="shift_l"><span class="key-name">Shift</span><span class="key-count">0</span></div>
+            <div class="key" data-key="z"><span class="key-name">Z</span><span class="key-count">0</span></div>
+            <div class="key" data-key="x"><span class="key-name">X</span><span class="key-count">0</span></div>
+            <div class="key" data-key="c"><span class="key-name">C</span><span class="key-count">0</span></div>
+            <div class="key" data-key="v"><span class="key-name">V</span><span class="key-count">0</span></div>
+            <div class="key" data-key="b"><span class="key-name">B</span><span class="key-count">0</span></div>
+            <div class="key" data-key="n"><span class="key-name">N</span><span class="key-count">0</span></div>
+            <div class="key" data-key="m"><span class="key-name">M</span><span class="key-count">0</span></div>
+            <div class="key" data-key=","><span class="key-name">,</span><span class="key-count">0</span></div>
+            <div class="key" data-key="."><span class="key-name">.</span><span class="key-count">0</span></div>
+            <div class="key" data-key="/"><span class="key-name">/</span><span class="key-count">0</span></div>
+            <div class="key key-fixed key-shift-right" data-key="shift_r"><span class="key-name">Shift</span><span class="key-count">0</span></div>
+        </div>
+        <div class="keyboard-row">
+            <div class="key key-fixed key-ctrl" data-key="ctrl_l"><span class="key-name">Ctrl</span><span class="key-count">0</span></div>
+            <div class="key key-fixed key-meta" data-key="meta"><span class="key-name">Win</span><span class="key-count">0</span></div>
+            <div class="key key-fixed key-alt" data-key="alt_l"><span class="key-name">Alt</span><span class="key-count">0</span></div>
+            <div class="key key-space" data-key="space"><span class="key-name"></span><span class="key-count">0</span></div>
+            <div class="key key-fixed key-alt" data-key="alt_r"><span class="key-name">Alt</span><span class="key-count">0</span></div>
+            <div class="key key-fixed key-menu" data-key="menu"><span class="key-name">Menu</span><span class="key-count">0</span></div>
+            <div class="key key-fixed key-ctrl" data-key="ctrl_r"><span class="key-name">Ctrl</span><span class="key-count">0</span></div>
+        </div>
+    </div>
+
+    <div class="keyboard controls-top">
+        <div class="keyboard-row">
+            <div class="key" data-key="print_screen"><span class="key-name">PrtSc</span><span class="key-count">0</span></div>
+            <div class="key" data-key="scroll_lock"><span class="key-name">Scroll</span><span class="key-count">0</span></div>
+            <div class="key" data-key="pause"><span class="key-name">Pause</span><span class="key-count">0</span></div>
+        </div>
+    </div>
+
+    <div class="keyboard controls-middle">
+        <div class="keyboard-row">
+            <div class="key" data-key="insert"><span class="key-name">Ins</span><span class="key-count">0</span></div>
+            <div class="key" data-key="home"><span class="key-name">Home</span><span class="key-count">0</span></div>
+            <div class="key" data-key="page_up"><span class="key-name">PgUp</span><span class="key-count">0</span></div>
+        </div>
+        <div class="keyboard-row">
+            <div class="key" data-key="delete"><span class="key-name">Del</span><span class="key-count">0</span></div>
+            <div class="key" data-key="end"><span class="key-name">End</span><span class="key-count">0</span></div>
+            <div class="key" data-key="page_down"><span class="key-name">PgDn</span><span class="key-count">0</span></div>
+        </div>
+    </div>
+
+    <div class="keyboard controls-bottom">
+        <div class="arrow-keys">
+            <div class="key arrow-up" data-key="up"><span class="key-name">↑</span><span class="key-count">0</span></div>
+            <div class="key arrow-left" data-key="left"><span class="key-name">←</span><span class="key-count">0</span></div>
+            <div class="key arrow-down" data-key="down"><span class="key-name">↓</span><span class="key-count">0</span></div>
+            <div class="key arrow-right" data-key="right"><span class="key-name">→</span><span class="key-count">0</span></div>
+        </div>
+    </div>
+
+    <!-- --- 新增: Top N 模块HTML结构 --- -->
+</div>
+
+<div class="mouse-section">
+    <div class="mouse-visual">
+        <div class="mouse-body">
+            <div class="mouse-zone mz-left" data-key="mouse_left">
+                <span class="key-name">左键</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-zone mz-right" data-key="mouse_right">
+                <span class="key-name">右键</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-zone mz-scroll-up" data-key="mouse_scroll_up">
+                <span class="key-name">滚轮↑</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-zone mz-scroll-down" data-key="mouse_scroll_down">
+                <span class="key-name">滚轮↓</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-zone mz-middle" data-key="mouse_middle">
+                <span class="key-name">中键</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-zone mz-x1" data-key="mouse_x1">
+                <span class="key-name">左后侧键</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-zone mz-x2" data-key="mouse_x2">
+                <span class="key-name">左前侧键</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-zone mz-scroll-left" data-key="mouse_scroll_left">
+                <span class="key-name">右后侧键</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-zone mz-scroll-right" data-key="mouse_scroll_right">
+                <span class="key-name">右前侧键</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-zone mz-scroll-left-dir" data-key="scroll_left_dir">
+                <span class="key-name">滚轮←</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-zone mz-scroll-right-dir" data-key="scroll_right_dir">
+                <span class="key-name">滚轮→</span>
+                <span class="key-count">0</span>
+            </div>
+            <div class="mouse-wheel"></div>
+        </div>
+    </div>
+</div>
+</div>
+
+<div class="top-n-area">
+    <div class="top-n-keys" id="top-n-keys">
+        <!-- 此处内容将由JavaScript动态生成 -->
+    </div>
+</div>
+</div>
+
+<script>
+  const API_URL = 'http://127.0.0.1:5000';
+  let liveUpdateInterval;
+  let lastLiveData = {};
+  let isHistory = false;
+  const statusDisplay = document.getElementById('status-display');
+  const startDateInput = document.getElementById('start-date');
+  const endDateInput = document.getElementById('end-date');
+  const queryBtn = document.getElementById('query-history-btn');
+  const liveBtn = document.getElementById('refresh-live-btn');
+
+  // --- 新增: 获取Top N模块的容器 ---
+  const topNContainer = document.getElementById('top-n-keys');
+  const TOP_N_COUNT = 25; // 定义要显示的数量
+  document.querySelectorAll('.key-count').forEach(el => el.textContent = '0');
+
+  /**
+   * Clears all key counts on the UI, including the Top N module.
+   */
+  function clearUI() {
+  }
+
+  /**
+   * Updates a single key element on the UI.
+   * @param {string} keyName - The data-key of the element.
+   * @param {number} count - The new count to display.
+   * @param {boolean} animate - Whether to trigger the 'pressed' animation.
+   */
+  function updateElement(keyName, count, animate) {
+    const escapedKeyName = keyName.replace(/\\/g, '\\\\');
+    const elements = document.querySelectorAll(`[data-key="${escapedKeyName}"]`);
+
+    elements.forEach(element => {
+      const countElement = element.querySelector('.key-count');
+      if (countElement) {
+        countElement.textContent = count;
+        if (animate) {
+          element.classList.add('pressed');
+          setTimeout(() => element.classList.remove('pressed'), 150);
+        }
+      }
+    });
+  }
+
+  /**
+   * --- 新增: 更新Top N显示模块的函数 ---
+   * Updates the Top N display with the most frequent keys.
+   * @param {object} data - The key count data object.
+   */
+  function updateTopN(data) {
+    if (!topNContainer) return;
+
+    // 用于将内部key名称映射为更友好的显示名称
+    const keyNameMapping = {
+      'mouse_left': '左键',
+      'mouse_middle': '中键',
+      'mouse_right': '右键',
+      'space': 'Space',
+      'enter': "Enter",
+      'backspace': 'Backspace',
+      'shift_l': 'Shift_l',
+      'shift_r': 'Shift_r',
+      'ctrl_l': 'Ctrl_l',
+      'ctrl_r': 'Ctrl_r',
+      'alt_l': 'Alt_l',
+      'alt_r': 'Alt_r',
+      'tab': 'Tab',
+      'caps_lock': 'Caps',
+      'esc': 'ESC',
+      'up': '↑',
+      'down': '↓',
+      'left': '←',
+      'right': '→',
+      'mouse_x1': "左后侧键",
+      'mouse_x2': "左前侧键",
+      'mouse_scroll_up': '滚轮↑',
+      'mouse_scroll_down': '滚轮↓',
+      'mouse_scroll_left': '右后侧键',
+      'mouse_scroll_right': '右前侧键',
+      'scroll_left_dir': '滚轮←',
+      'scroll_right_dir': '滚轮→'
+    };
+
+    // 1. 将数据对象转换为数组并排序
+    const sortedKeys = Object.entries(data)
+      .map(([key, count]) => ({key, count}))
+      .sort((a, b) => b.count - a.count);
+
+    // 2. 截取前N个
+    const topNKeys = sortedKeys.slice(0, TOP_N_COUNT);
+
+    // 3. 清空当前显示
+    topNContainer.innerHTML = '';
+
+    // 4. 创建并添加新元素
+    topNKeys.forEach(item => {
+      // 查找原始按键元素以获取其显示名称
+      const originalElement = document.querySelector(`[data-key="${item.key.replace(/\\/g, '\\\\')}"]`);
+      let displayName = item.key.toUpperCase(); // 默认显示
+      if (originalElement) {
+        const nameSpan = originalElement.querySelector('.key-name');
+        if (nameSpan && nameSpan.textContent.trim() !== '') {
+          displayName = nameSpan.textContent;
+        }
+      }
+      // 如果有特殊映射，则使用映射的名称
+      if (keyNameMapping[item.key]) {
+        displayName = keyNameMapping[item.key];
+      }
+
+
+      const keyElement = document.createElement('div');
+      keyElement.className = 'top-key';
+
+      const nameElement = document.createElement('span');
+      nameElement.className = 'key-name';
+      nameElement.textContent = displayName;
+
+      const countElement = document.createElement('span');
+      countElement.className = 'key-count';
+      countElement.textContent = item.count;
+
+      keyElement.appendChild(nameElement);
+      keyElement.appendChild(countElement);
+      topNContainer.appendChild(keyElement);
+    });
+
+    // 用不可见占位元素补齐剩余位置，使空数据时高度一致
+    for (let i = topNKeys.length; i < TOP_N_COUNT; i++) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'top-key';
+      placeholder.style.visibility = 'hidden';
+      placeholder.style.pointerEvents = 'none';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'key-name';
+      nameEl.innerHTML = '&nbsp;';
+      const countEl = document.createElement('span');
+      countEl.className = 'key-count';
+      countEl.innerHTML = '&nbsp;';
+      placeholder.appendChild(nameEl);
+      placeholder.appendChild(countEl);
+      topNContainer.appendChild(placeholder);
+    }
+  }
+
+
+  /**
+   * Fetches the latest live data and updates only the keys that have changed.
+   */
+  async function fetchLiveUpdate() {
+    try {
+      const response = await fetch(`${API_URL}/keycounts`);
+      if (!response.ok) throw new Error('Network response was not ok.');
+      let animate = true;
+      if (isHistory){
+        isHistory = false
+        animate = false
+      }
+      const currentData = await response.json();
+      // Combine keys from old and new data to catch all changes, including resets
+      const allKeys = new Set([...Object.keys(lastLiveData), ...Object.keys(currentData)]);
+      let had_change = false;
+      allKeys.forEach(key => {
+        const oldValue = lastLiveData[key] || 0;
+        const newValue = currentData[key] || 0;
+        if (oldValue !== newValue) {
+          updateElement(key, newValue, animate); // Animate only if the value changed
+          had_change = true;
+        }
+      });
+
+      if (had_change) {
+        updateTopN(currentData); // --- 修改: 更新Top N模块
+        lastLiveData = currentData; // Update the cache for the next comparison
+      }
+
+    } catch (error) {
+      console.error('获取实时数据失败:', error);
+      stopLiveUpdates();
+      statusDisplay.textContent = '错误: 无法连接到后端服务';
+    }
+  }
+
+  /**
+   * Fetches historical data for the selected date range and displays it statically.
+   */
+  async function fetchHistory() {
+    const startDate = startDateInput.value;
+    const endDate = endDateInput.value;
+    if (!startDate || !endDate) {
+      alert('请选择开始和结束日期');
+      return;
+    }
+
+    stopLiveUpdates();
+    statusDisplay.textContent = `查询历史数据: ${startDate} 到 ${endDate}`;
+
+    try {
+      const response = await fetch(`${API_URL}/history?start=${startDate}&end=${endDate}`);
+      if (!response.ok) throw new Error('Network response was not ok.');
+
+      const historyData = await response.json();
+
+      clearUI(); // Clear the board before showing static history data
+
+      if (Object.keys(historyData).length === 0) {
+        statusDisplay.textContent += ' (该时间段无记录)';
+        updateTopN({});
+      } else {
+        // Update UI with static data, no animation
+        for (const keyName in historyData) {
+          updateElement(keyName, historyData[keyName], false);
+        }
+        updateTopN(historyData); // --- 修改: 更新Top N模块
+      }
+      lastLiveData = historyData;
+      isHistory = true;
+    } catch (error) {
+      console.error('获取历史数据失败:', error);
+      statusDisplay.textContent = '错误: 查询历史数据失败';
+    }
+  }
+
+  /**
+   * Starts the interval for fetching live data.
+   */
+  function startLiveUpdates() {
+    stopLiveUpdates(); // Ensure no multiple intervals are running
+    clearUI(); // Clear any previous history data from the board
+    updateTopN({}); // 预先填入占位元素，保持高度一致
+    statusDisplay.textContent = '当前模式: 实时数据';
+    fetchLiveUpdate(); // Fetch immediately to populate the board
+    liveUpdateInterval = setInterval(fetchLiveUpdate, 500);
+  }
+
+  /**
+   * Stops the interval for fetching live data.
+   */
+  function stopLiveUpdates() {
+    clearInterval(liveUpdateInterval);
+  }
+
+  /**
+   * Initializes the application, sets default dates, and attaches event listeners.
+   */
+  function initialize() {
+    const today = new Date().toISOString().split('T')[0];
+    startDateInput.value = today;
+    endDateInput.value = today;
+
+    queryBtn.addEventListener('click', fetchHistory);
+    liveBtn.addEventListener('click', startLiveUpdates);
+
+    startLiveUpdates(); // Start in live mode by default
+  }
+
+  window.addEventListener('load', initialize);
+
+</script>
+</body>
+</html>

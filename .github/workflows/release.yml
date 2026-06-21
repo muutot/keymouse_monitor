@@ -1,0 +1,55 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ rust-rewrite ]
+    paths: [ 'version' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version
+        id: version
+        shell: pwsh
+        run: |
+          $v = (Get-Content version -Raw).Trim()
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Generate release notes
+        shell: pwsh
+        run: |
+          $prev = git log --pretty=format:"%H" --skip=1 -n 1 version
+          if ($prev) {
+            $log = git log $prev..HEAD --oneline --no-decorate
+          } else {
+            $log = git log --oneline --no-decorate
+          }
+          @"
+          ## Changelog
+
+          $($log -join "`n")
+          "@ | Out-File -FilePath release_notes.md -Encoding UTF8
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build with Cargo
+        run: cargo build --release
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          files: target/release/keymouse-monitor.exe
