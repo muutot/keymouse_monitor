@@ -8,6 +8,7 @@ use axum::response::Json;
 use axum::Router;
 use axum::routing::get;
 use chrono::NaiveDate;
+use parking_lot::RwLock;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tower_http::cors::{Any, CorsLayer};
@@ -18,7 +19,7 @@ use crate::database::Database;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub data: Arc<Mutex<MonitorData>>,
+    pub data: Arc<RwLock<MonitorData>>,
     pub db: Arc<Mutex<Database>>,
 }
 
@@ -44,7 +45,7 @@ pub fn create_router(state: AppState) -> Router {
 }
 
 async fn get_keycounts(State(state): State<AppState>) -> Json<Value> {
-    let guard = state.data.lock().unwrap();
+    let guard = state.data.read();
     let counts = guard.get_key_counts();
     Json(json!(counts))
 }
@@ -53,7 +54,6 @@ async fn get_history(
     State(state): State<AppState>,
     Query(params): Query<HistoryParams>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
-    // Validate date format
     NaiveDate::parse_from_str(&params.start, "%Y-%m-%d")
         .map_err(|_| {
             (
