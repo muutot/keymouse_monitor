@@ -119,24 +119,5 @@ impl DatabaseBackend for SqliteBackend {
         serde_json::to_string_pretty(&export).expect("Failed to serialize export JSON")
     }
 
-    fn import_from_json(&mut self, json_str: &str) {
-        let value: serde_json::Value =
-            serde_json::from_str(json_str).expect("Failed to parse import JSON");
 
-        let records = value
-            .get("records")
-            .and_then(|v| v.as_object())
-            .expect("Import JSON missing 'records' object");
-
-        for (date, data_value) in records {
-            let data: HashMap<String, u64> =
-                serde_json::from_value(data_value.clone()).unwrap_or_default();
-            self.upsert_day_stats(date, &data);
-        }
-
-        println!(
-            "[sqlite] Imported {} date records from JSON.",
-            records.len()
-        );
-    }
 }

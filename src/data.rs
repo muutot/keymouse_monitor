@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use chrono::Local;
 
-use crate::database::Database;
+use crate::database::{Database, ImportMode};
 
 pub struct MonitorData {
     pub base_counts: HashMap<String, u64>,
@@ -50,6 +50,19 @@ impl MonitorData {
         total
     }
 
+    pub fn import_today_data(&mut self, data: &HashMap<String, u64>, mode: ImportMode) {
+        match mode {
+            ImportMode::Overwrite => {
+                self.base_counts = data.clone();
+            }
+            ImportMode::Merge => {
+                for (k, v) in data {
+                    *self.base_counts.entry(k.clone()).or_insert(0) += v;
+                }
+            }
+        }
+    }
+
     pub fn save_to_db(&mut self, db: &Database) {
         let today_str = Local::now().format("%Y-%m-%d").to_string();
 
@@ -79,7 +92,7 @@ impl MonitorData {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::Database;
+use crate::database::{Database, ImportMode};
 
     fn make_empty() -> MonitorData {
         MonitorData {

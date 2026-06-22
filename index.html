@@ -627,6 +627,106 @@
             color: #aaa;
             padding: 2px 0 3px 0;
         }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-box {
+            background: #1e1e1e;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 480px;
+            width: 90%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+        .modal-box h2 {
+            color: #03dac6;
+            margin: 0 0 6px 0;
+        }
+        .modal-box .subtitle {
+            color: #888;
+            font-size: 13px;
+            margin: 0 0 20px 0;
+        }
+        .modal-box label {
+            display: block;
+            margin: 12px 0 4px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        .modal-box input[type="file"] {
+            width: 100%;
+            padding: 10px;
+            background: #2e2e2e;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        .modal-box .mode-group {
+            display: flex;
+            gap: 20px;
+            margin: 8px 0;
+        }
+        .modal-box .mode-group label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            color: #e0e0e0;
+            margin: 0;
+        }
+        .modal-box .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .modal-box .modal-actions button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .modal-box .modal-actions .btn-import {
+            background: #03dac6;
+            color: #121212;
+        }
+        .modal-box .modal-actions .btn-import:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .modal-box .modal-actions .btn-cancel {
+            background: #444;
+            color: #e0e0e0;
+        }
+        .modal-box #modal-result {
+            margin-top: 12px;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+            white-space: pre-wrap;
+        }
+        .modal-box #modal-result.success {
+            background: #1b3d1b;
+            color: #81c784;
+            border: 1px solid #388e3c;
+        }
+        .modal-box #modal-result.error {
+            background: #3d1b1b;
+            color: #ef9a9a;
+            border: 1px solid #c62828;
+        }
     </style>
 </head>
 <body>
@@ -649,6 +749,7 @@
     <input type="date" id="end-date">
     <button type="button" id="query-history-btn">查询历史</button>
     <button type="button" id="refresh-live-btn">刷新实时数据</button>
+    <button type="button" id="import-btn" style="background-color:#03dac6;">导入数据</button>
     <div class="status-display" id="status-display">当前模式: 实时数据</div>
 </div>
 
@@ -866,6 +967,25 @@
 </div>
 </div>
 
+<div class="modal-overlay" id="import-modal">
+  <div class="modal-box">
+    <h2>导入数据</h2>
+    <p class="subtitle">上传 JSON 文件导入键盘鼠标统计数据</p>
+    <label for="modal-file">选择 JSON 文件</label>
+    <input type="file" id="modal-file" accept=".json">
+    <label>导入模式</label>
+    <div class="mode-group">
+      <label><input type="radio" name="modal-mode" value="overwrite" checked> 覆盖</label>
+      <label><input type="radio" name="modal-mode" value="merge"> 叠加</label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="modal-cancel">取消</button>
+      <button class="btn-import" id="modal-import" disabled>导入</button>
+    </div>
+    <div id="modal-result"></div>
+  </div>
+</div>
+
 <script>
   const API_URL = 'http://127.0.0.1:5000';
   let eventSource = null;
@@ -1080,6 +1200,63 @@
 
     startLiveUpdates();
   }
+
+  /* ── Import Modal ── */
+  const modalOverlay = document.getElementById('import-modal');
+  const modalFile = document.getElementById('modal-file');
+  const modalImport = document.getElementById('modal-import');
+  const modalCancel = document.getElementById('modal-cancel');
+  const modalResult = document.getElementById('modal-result');
+
+  document.getElementById('import-btn').addEventListener('click', () => {
+    modalFile.value = '';
+    modalResult.style.display = 'none';
+    modalImport.disabled = true;
+    modalOverlay.classList.add('active');
+  });
+
+  modalCancel.addEventListener('click', () => {
+    modalOverlay.classList.remove('active');
+  });
+
+  modalOverlay.addEventListener('click', (e) => {
+    if (e.target === modalOverlay) modalOverlay.classList.remove('active');
+  });
+
+  modalFile.addEventListener('change', () => {
+    modalImport.disabled = !modalFile.files.length;
+  });
+
+  modalImport.addEventListener('click', async () => {
+    const file = modalFile.files[0];
+    if (!file) return;
+
+    const mode = document.querySelector('input[name="modal-mode"]:checked').value;
+    modalImport.disabled = true;
+    modalResult.style.display = 'none';
+
+    try {
+      const text = await file.text();
+      JSON.parse(text);
+
+      const response = await fetch(`/api/import?mode=${mode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: text,
+      });
+
+      const data = await response.json();
+      modalResult.className = response.ok ? 'success' : 'error';
+      modalResult.textContent = JSON.stringify(data, null, 2);
+      modalResult.style.display = 'block';
+    } catch (e) {
+      modalResult.className = 'error';
+      modalResult.textContent = '错误: ' + e.message;
+      modalResult.style.display = 'block';
+    } finally {
+      modalImport.disabled = false;
+    }
+  });
 
   window.addEventListener('load', initialize);
 
