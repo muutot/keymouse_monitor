@@ -1,13 +1,17 @@
+use std::convert::Infallible;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use axum::extract::Query;
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::response::sse::{Event, Sse};
 use axum::response::Json;
 use axum::Router;
 use axum::routing::get;
 use chrono::NaiveDate;
+use futures::stream::Stream;
 use parking_lot::RwLock;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -38,6 +42,7 @@ pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/keycounts", get(get_keycounts))
         .route("/history", get(get_history))
+        .route("/events", get(sse_handler))
         .nest_service("/static", ServeDir::new("static"))
         .fallback_service(ServeDir::new(".").append_index_html_on_directories(true))
         .layer(cors)
@@ -72,4 +77,21 @@ async fn get_history(
     let db = state.db.lock().unwrap();
     let result = db.get_stats_for_range(&params.start, &params.end);
     Ok(Json(json!(result)))
+}
+
+async fn sse_handler(
+    State(state): State<AppState>,
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let data = state.data.clone();
+
+    let stream = futures::stream::unfold(data, |data| async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let json = {
+            let guard = data.read();
+            serde_json::to_string(&guard.get_key_counts()).unwrap()
+        };
+        Some((Ok(Event::default().data(json)), data))
+    });
+
+    Sse::new(stream)
 }
