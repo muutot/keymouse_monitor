@@ -84,33 +84,36 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new_sqlite(cfg: &SqliteConfig) -> Self {
+    pub fn new_sqlite(cfg: &SqliteConfig, use_server_aggregation: bool) -> Self {
         Database {
-            inner: Box::new(sqlite::SqliteBackend::new(cfg)),
+            inner: Box::new(sqlite::SqliteBackend::new(cfg, use_server_aggregation)),
         }
     }
 
-    pub fn new_mongodb(cfg: &MongoConfig) -> Self {
+    pub fn new_mongodb(cfg: &MongoConfig, use_server_aggregation: bool) -> Self {
         Database {
-            inner: Box::new(mongodb::MongoBackend::new(cfg)),
+            inner: Box::new(mongodb::MongoBackend::new(cfg, use_server_aggregation)),
         }
     }
 
     pub fn connect(db_cfg: &DatabaseConfig) -> Self {
         let backend = BackendType::from_str(&db_cfg.backend);
+        let use_agg = db_cfg.use_server_aggregation;
         match backend {
-            BackendType::Sqlite => Self::new_sqlite(&db_cfg.sqlite),
-            BackendType::MongoDb => Self::new_mongodb(&db_cfg.mongodb),
+            BackendType::Sqlite => Self::new_sqlite(&db_cfg.sqlite, use_agg),
+            BackendType::MongoDb => Self::new_mongodb(&db_cfg.mongodb, use_agg),
         }
     }
 
     /// Create a SQLite database from a file path (for tests and convenience).
-    /// Equivalent to `Database::new_sqlite(&SqliteConfig { path: db_file.into() })`.
     #[allow(dead_code)]
     pub fn new(db_file: &str) -> Self {
-        Self::new_sqlite(&SqliteConfig {
-            path: db_file.to_string(),
-        })
+        Self::new_sqlite(
+            &SqliteConfig {
+                path: db_file.to_string(),
+            },
+            true,
+        )
     }
 
     pub fn get_stats_for_day(&self, date_str: &str) -> HashMap<String, u64> {

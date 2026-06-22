@@ -9,16 +9,17 @@ use super::{BackendType, DatabaseBackend};
 
 pub struct SqliteBackend {
     conn: Connection,
+    use_server_aggregation: bool,
 }
 
 impl SqliteBackend {
-    pub fn new(cfg: &SqliteConfig) -> Self {
+    pub fn new(cfg: &SqliteConfig, use_server_aggregation: bool) -> Self {
         let conn = Connection::open(&cfg.path).expect("Failed to open database");
         conn.execute_batch("PRAGMA journal_mode=WAL")
             .expect("Failed to set WAL mode");
         conn.execute_batch("PRAGMA synchronous=NORMAL")
             .expect("Failed to set synchronous mode");
-        let backend = Self { conn };
+        let backend = Self { conn, use_server_aggregation };
         backend.init_db();
         backend
     }
@@ -59,24 +60,48 @@ impl DatabaseBackend for SqliteBackend {
         start_date: &str,
         end_date: &str,
     ) -> HashMap<String, u64> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT data FROM daily_stats WHERE date BETWEEN ?1 AND ?2")
-            .expect("Failed to prepare range SELECT");
-        let results = stmt
-            .query_map([start_date, end_date], |row| row.get::<_, String>(0))
-            .expect("Failed to query range data");
-
-        let mut aggregated = HashMap::new();
-        for result in results {
-            let Ok(json_str) = result else { continue };
-            let day_data: HashMap<String, u64> =
-                serde_json::from_str(&json_str).unwrap_or_default();
-            for (key, value) in day_data {
-                *aggregated.entry(key).or_insert(0) += value;
+        if self.use_server_aggregation {
+            let mut stmt = self
+                .conn
+                .prepare_cached(
+                    "SELECT j.key, SUM(j.value) FROM daily_stats, \
+                     json_each(daily_stats.data) AS j \
+                     WHERE date BETWEEN ?1 AND ?2 GROUP BY j.key",
+                )
+                .expect("Failed to prepare aggregation SELECT");
+            let results = stmt
+                .query_map([start_date, end_date], |row| {
+                    let key: String = row.get(0)?;
+                    let value: i64 = row.get(1)?;
+                    Ok((key, value as u64))
+                })
+                .expect("Failed to query aggregation data");
+            let mut aggregated = HashMap::new();
+            for result in results {
+                if let Ok((key, value)) = result {
+                    *aggregated.entry(key).or_insert(0) += value;
+                }
             }
+            aggregated
+        } else {
+            let mut stmt = self
+                .conn
+                .prepare_cached("SELECT data FROM daily_stats WHERE date BETWEEN ?1 AND ?2")
+                .expect("Failed to prepare range SELECT");
+            let results = stmt
+                .query_map([start_date, end_date], |row| row.get::<_, String>(0))
+                .expect("Failed to query range data");
+            let mut aggregated = HashMap::new();
+            for result in results {
+                let Ok(json_str) = result else { continue };
+                let day_data: HashMap<String, u64> =
+                    serde_json::from_str(&json_str).unwrap_or_default();
+                for (key, value) in day_data {
+                    *aggregated.entry(key).or_insert(0) += value;
+                }
+            }
+            aggregated
         }
-        aggregated
     }
 
     fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
