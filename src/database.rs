@@ -77,3 +77,103 @@ impl Database {
             .unwrap();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_db() -> Database {
+        Database::new(":memory:")
+    }
+
+    #[test]
+    fn test_init_creates_table() {
+        let db = make_db();
+        let loaded = db.get_stats_for_day("2026-06-22");
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn test_upsert_and_get_day() {
+        let db = make_db();
+        let mut data = HashMap::new();
+        data.insert("a".to_string(), 5);
+        data.insert("b".to_string(), 3);
+
+        db.upsert_day_stats("2026-06-22", &data);
+        let loaded = db.get_stats_for_day("2026-06-22");
+
+        assert_eq!(loaded.get("a"), Some(&5));
+        assert_eq!(loaded.get("b"), Some(&3));
+        assert_eq!(loaded.len(), 2);
+    }
+
+    #[test]
+    fn test_upsert_replaces_existing() {
+        let db = make_db();
+        let mut data = HashMap::new();
+        data.insert("x".to_string(), 10);
+        db.upsert_day_stats("2026-06-22", &data);
+
+        let mut data2 = HashMap::new();
+        data2.insert("x".to_string(), 99);
+        data2.insert("y".to_string(), 7);
+        db.upsert_day_stats("2026-06-22", &data2);
+
+        let loaded = db.get_stats_for_day("2026-06-22");
+        assert_eq!(loaded.get("x"), Some(&99));
+        assert_eq!(loaded.get("y"), Some(&7));
+        assert_eq!(loaded.len(), 2);
+    }
+
+    #[test]
+    fn test_get_stats_for_missing_day_returns_empty() {
+        let db = make_db();
+        let loaded = db.get_stats_for_day("2099-01-01");
+        assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn test_get_stats_for_range_single_day() {
+        let db = make_db();
+        let mut data = HashMap::new();
+        data.insert("k".to_string(), 42);
+        db.upsert_day_stats("2026-06-22", &data);
+
+        let result = db.get_stats_for_range("2026-06-22", "2026-06-22");
+        assert_eq!(result.get("k"), Some(&42));
+    }
+
+    #[test]
+    fn test_get_stats_for_range_multiple_days() {
+        let db = make_db();
+        let mut day1 = HashMap::new();
+        day1.insert("a".to_string(), 1);
+        db.upsert_day_stats("2026-06-01", &day1);
+
+        let mut day2 = HashMap::new();
+        day2.insert("a".to_string(), 2);
+        day2.insert("b".to_string(), 3);
+        db.upsert_day_stats("2026-06-02", &day2);
+
+        let result = db.get_stats_for_range("2026-06-01", "2026-06-02");
+        assert_eq!(result.get("a"), Some(&3));
+        assert_eq!(result.get("b"), Some(&3));
+    }
+
+    #[test]
+    fn test_get_stats_for_range_no_data() {
+        let db = make_db();
+        let result = db.get_stats_for_range("2000-01-01", "2000-01-02");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_upsert_and_get_empty_data() {
+        let db = make_db();
+        let data = HashMap::new();
+        db.upsert_day_stats("2026-06-22", &data);
+        let loaded = db.get_stats_for_day("2026-06-22");
+        assert!(loaded.is_empty());
+    }
+}

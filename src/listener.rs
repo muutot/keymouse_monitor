@@ -1,18 +1,13 @@
 use std::sync::Arc;
-use std::sync::Mutex;
 
+use parking_lot::RwLock;
 use rdev::Event;
 use rdev::EventType;
 
 use crate::data::MonitorData;
-use crate::database::Database;
 use crate::maps;
 
-pub fn start(
-    data: Arc<Mutex<MonitorData>>,
-    db: Arc<Mutex<Database>>,
-    save_threshold: u64,
-) {
+pub fn start(data: Arc<RwLock<MonitorData>>) {
     std::thread::spawn(move || {
         if let Err(e) = rdev::listen(move |event: Event| {
             let key_name = match &event.event_type {
@@ -35,11 +30,7 @@ pub fn start(
             };
 
             if let Some(ref name) = key_name {
-                let mut guard = data.lock().unwrap();
-                guard.increase_count(name);
-                if guard.total_since_save >= save_threshold {
-                    guard.save_to_db(&db.lock().unwrap());
-                }
+                data.write().increase_count(name);
             }
         }) {
             eprintln!("Listener error: {:?}", e);

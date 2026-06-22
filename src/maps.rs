@@ -236,3 +236,146 @@ fn vk_to_string(vk: u32) -> Option<&'static str> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── key_to_string ──────────────────────────────────────────
+
+    #[test]
+    fn test_modifier_keys() {
+        assert_eq!(key_to_string(&Key::Alt), Some("alt_l".into()));
+        assert_eq!(key_to_string(&Key::AltGr), Some("alt_r".into()));
+        assert_eq!(key_to_string(&Key::ControlLeft), Some("ctrl_l".into()));
+        assert_eq!(key_to_string(&Key::ControlRight), Some("ctrl_r".into()));
+        assert_eq!(key_to_string(&Key::ShiftLeft), Some("shift_l".into()));
+        assert_eq!(key_to_string(&Key::ShiftRight), Some("shift_r".into()));
+        assert_eq!(key_to_string(&Key::MetaLeft), Some("meta".into()));
+        assert_eq!(key_to_string(&Key::MetaRight), Some("meta_r".into()));
+    }
+
+    #[test]
+    fn test_navigation_keys() {
+        assert_eq!(key_to_string(&Key::UpArrow), Some("up".into()));
+        assert_eq!(key_to_string(&Key::DownArrow), Some("down".into()));
+        assert_eq!(key_to_string(&Key::LeftArrow), Some("left".into()));
+        assert_eq!(key_to_string(&Key::RightArrow), Some("right".into()));
+        assert_eq!(key_to_string(&Key::Home), Some("home".into()));
+        assert_eq!(key_to_string(&Key::End), Some("end".into()));
+        assert_eq!(key_to_string(&Key::PageUp), Some("page_up".into()));
+        assert_eq!(key_to_string(&Key::PageDown), Some("page_down".into()));
+        assert_eq!(key_to_string(&Key::Insert), Some("insert".into()));
+        assert_eq!(key_to_string(&Key::Delete), Some("delete".into()));
+    }
+
+    #[test]
+    fn test_editing_keys() {
+        assert_eq!(key_to_string(&Key::Backspace), Some("backspace".into()));
+        assert_eq!(key_to_string(&Key::Return), Some("enter".into()));
+        assert_eq!(key_to_string(&Key::Tab), Some("tab".into()));
+        assert_eq!(key_to_string(&Key::Space), Some("space".into()));
+        assert_eq!(key_to_string(&Key::CapsLock), Some("caps_lock".into()));
+        assert_eq!(key_to_string(&Key::Escape), Some("esc".into()));
+    }
+
+    #[test]
+    fn test_function_keys() {
+        assert_eq!(key_to_string(&Key::F1), Some("f1".into()));
+        assert_eq!(key_to_string(&Key::F2), Some("f2".into()));
+        assert_eq!(key_to_string(&Key::F3), Some("f3".into()));
+        assert_eq!(key_to_string(&Key::F4), Some("f4".into()));
+        assert_eq!(key_to_string(&Key::F5), Some("f5".into()));
+        assert_eq!(key_to_string(&Key::F6), Some("f6".into()));
+        assert_eq!(key_to_string(&Key::F7), Some("f7".into()));
+        assert_eq!(key_to_string(&Key::F8), Some("f8".into()));
+        assert_eq!(key_to_string(&Key::F9), Some("f9".into()));
+        assert_eq!(key_to_string(&Key::F10), Some("f10".into()));
+        assert_eq!(key_to_string(&Key::F11), Some("f11".into()));
+        assert_eq!(key_to_string(&Key::F12), Some("f12".into()));
+    }
+
+    #[test]
+    fn test_system_keys() {
+        assert_eq!(key_to_string(&Key::PrintScreen), Some("print_screen".into()));
+        assert_eq!(key_to_string(&Key::ScrollLock), Some("scroll_lock".into()));
+        assert_eq!(key_to_string(&Key::Pause), Some("pause".into()));
+        assert_eq!(key_to_string(&Key::NumLock), Some("numpad_lock".into()));
+        assert_eq!(key_to_string(&Key::Function), Some("fn".into()));
+    }
+
+    #[test]
+    fn test_letter_keys() {
+        assert_eq!(key_to_string(&Key::KeyA), Some("a".into()));
+        assert_eq!(key_to_string(&Key::KeyZ), Some("z".into()));
+        assert_eq!(key_to_string(&Key::KeyM), Some("m".into()));
+    }
+
+    #[test]
+    fn test_number_row() {
+        assert_eq!(key_to_string(&Key::Num0), Some("0".into()));
+        assert_eq!(key_to_string(&Key::Num9), Some("9".into()));
+    }
+
+    #[test]
+    fn test_symbol_keys() {
+        assert_eq!(key_to_string(&Key::BackQuote), Some("`".into()));
+        assert_eq!(key_to_string(&Key::Minus), Some("-".into()));
+        assert_eq!(key_to_string(&Key::Equal), Some("=".into()));
+        assert_eq!(key_to_string(&Key::LeftBracket), Some("[".into()));
+        assert_eq!(key_to_string(&Key::RightBracket), Some("]".into()));
+        assert_eq!(key_to_string(&Key::SemiColon), Some(";".into()));
+        assert_eq!(key_to_string(&Key::Quote), Some("'".into()));
+        assert_eq!(key_to_string(&Key::BackSlash), Some("backslash".into()));
+        assert_eq!(key_to_string(&Key::IntlBackslash), Some("intl_backslash".into()));
+        assert_eq!(key_to_string(&Key::Comma), Some(",".into()));
+        assert_eq!(key_to_string(&Key::Dot), Some(".".into()));
+        assert_eq!(key_to_string(&Key::Slash), Some("/".into()));
+    }
+
+    #[test]
+    fn test_numpad_keys() {
+        assert_eq!(key_to_string(&Key::Kp0), Some("numpad0".into()));
+        assert_eq!(key_to_string(&Key::Kp9), Some("numpad9".into()));
+        assert_eq!(key_to_string(&Key::KpReturn), Some("numpad_enter".into()));
+        assert_eq!(key_to_string(&Key::KpMinus), Some("numpad_subtract".into()));
+        assert_eq!(key_to_string(&Key::KpPlus), Some("numpad_add".into()));
+        assert_eq!(key_to_string(&Key::KpMultiply), Some("numpad_multiply".into()));
+        assert_eq!(key_to_string(&Key::KpDivide), Some("numpad_divide".into()));
+        assert_eq!(key_to_string(&Key::KpDelete), Some("numpad_decimal".into()));
+    }
+
+    #[test]
+    fn test_unknown_key_with_known_vk() {
+        assert_eq!(key_to_string(&Key::Unknown(48)), Some("0".into()));
+        assert_eq!(key_to_string(&Key::Unknown(65)), Some("a".into()));
+        assert_eq!(key_to_string(&Key::Unknown(112)), Some("f1".into()));
+    }
+
+    #[test]
+    fn test_unknown_key_with_unmapped_vk() {
+        assert_eq!(key_to_string(&Key::Unknown(999)), None);
+        assert_eq!(key_to_string(&Key::Unknown(0)), None);
+    }
+
+    // ── button_to_string ───────────────────────────────────────
+
+    #[test]
+    fn test_standard_mouse_buttons() {
+        assert_eq!(button_to_string(&Button::Left), Some("mouse_left".into()));
+        assert_eq!(button_to_string(&Button::Right), Some("mouse_right".into()));
+        assert_eq!(button_to_string(&Button::Middle), Some("mouse_middle".into()));
+    }
+
+    #[test]
+    fn test_side_buttons_x1_x2() {
+        assert_eq!(button_to_string(&Button::Unknown(1)), Some("mouse_x1".into()));
+        assert_eq!(button_to_string(&Button::Unknown(2)), Some("mouse_x2".into()));
+    }
+
+    #[test]
+    fn test_unknown_mouse_buttons() {
+        assert_eq!(button_to_string(&Button::Unknown(3)), Some("mouse_unknown_3".into()));
+        assert_eq!(button_to_string(&Button::Unknown(99)), Some("mouse_unknown_99".into()));
+    }
+}
