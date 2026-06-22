@@ -438,8 +438,6 @@
             border-radius: 8px;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-        .mz-scroll-up {
             border-bottom-color: rgba(3, 218, 198, 0.25);
         }
 
@@ -454,8 +452,6 @@
             border-radius: 8px;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-        .mz-scroll-down {
             border-bottom-color: rgba(3, 218, 198, 0.25);
         }
 
@@ -469,11 +465,6 @@
             border-radius: 8px;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-        .mz-scroll-left-dir .key-count {
-            font-size: 1.1em;
-        }
-        .mz-scroll-left-dir {
             border-bottom-color: rgba(3, 218, 198, 0.2);
         }
 
@@ -487,11 +478,6 @@
             border-radius: 8px;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.06);
-        }
-        .mz-scroll-right-dir .key-count {
-            font-size: 1.1em;
-        }
-        .mz-scroll-right-dir {
             border-bottom-color: rgba(3, 218, 198, 0.2);
         }
 
@@ -505,6 +491,7 @@
             z-index: 3;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.06);
+            border-bottom-color: rgba(187, 134, 252, 0.25);
         }
         .mz-scroll-left::after {
             content: '';
@@ -517,9 +504,6 @@
             border-radius: 0 3px 3px 0;
             transform: translateY(-50%);
         }
-        .mz-scroll-left {
-            border-bottom-color: rgba(187, 134, 252, 0.25);
-        }
 
         /* Scroll right - right side button (右前侧键) */
         .mz-scroll-right {
@@ -531,6 +515,7 @@
             z-index: 3;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.06);
+            border-bottom-color: rgba(187, 134, 252, 0.25);
         }
         .mz-scroll-right::after {
             content: '';
@@ -543,9 +528,6 @@
             border-radius: 0 3px 3px 0;
             transform: translateY(-50%);
         }
-        .mz-scroll-right {
-            border-bottom-color: rgba(187, 134, 252, 0.25);
-        }
 
         /* Left side button: X1 (左后侧键) - left column, row 1 */
         .mz-x1 {
@@ -557,8 +539,8 @@
             z-index: 3;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.06);
+            border-bottom-color: rgba(187, 134, 252, 0.25);
         }
-
         .mz-x1::before {
             content: '';
             position: absolute;
@@ -569,9 +551,6 @@
             background: #3a3a3a;
             border-radius: 3px 0 0 3px;
             transform: translateY(-50%);
-        }
-        .mz-x1 {
-            border-bottom-color: rgba(187, 134, 252, 0.25);
         }
 
         /* Left side button: X2 (左前侧键) - left column, row 2 */
@@ -584,8 +563,8 @@
             z-index: 3;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.06);
+            border-bottom-color: rgba(187, 134, 252, 0.25);
         }
-
         .mz-x2::before {
             content: '';
             position: absolute;
@@ -596,9 +575,6 @@
             background: #3a3a3a;
             border-radius: 3px 0 0 3px;
             transform: translateY(-50%);
-        }
-        .mz-x2 {
-            border-bottom-color: rgba(187, 134, 252, 0.25);
         }
 
         /* --- 新增: Top N 模块样式 --- */
@@ -639,17 +615,17 @@
             font-weight: bold;
             padding: 5px;
             box-sizing: border-box;
+        }
 
-            .key-count {
-                font-size: 1.1em;
-                color: #c19fcf;
-            }
+        .top-key .key-count {
+            font-size: 1.1em;
+            color: #c19fcf;
+        }
 
-            .key-name {
-                font-size: 15px;
-                color: #aaa;
-                padding: 2px 0 3px 0;
-            }
+        .top-key .key-name {
+            font-size: 15px;
+            color: #aaa;
+            padding: 2px 0 3px 0;
         }
     </style>
 </head>
@@ -671,8 +647,8 @@
     <input type="date" id="start-date">
     <label for="end-date">结束日期:</label>
     <input type="date" id="end-date">
-    <button id="query-history-btn">查询历史</button>
-    <button id="refresh-live-btn">刷新实时数据</button>
+    <button type="button" id="query-history-btn">查询历史</button>
+    <button type="button" id="refresh-live-btn">刷新实时数据</button>
     <div class="status-display" id="status-display">当前模式: 实时数据</div>
 </div>
 
@@ -708,7 +684,7 @@
 
     <div class="keyboard function-keys">
         <div class="keyboard-row">
-            <div class="key key-fixed" style="width: 70px;" data-key="esc"><span class="key-name">ESC</span><span class="key-count">0</span></div>
+            <div class="key key-fixed" data-key="esc"><span class="key-name">ESC</span><span class="key-count">0</span></div>
             <div class="key" data-key="f1"><span class="key-name">F1</span><span class="key-count">0</span></div>
             <div class="key" data-key="f2"><span class="key-name">F2</span><span class="key-count">0</span></div>
             <div class="key" data-key="f3"><span class="key-name">F3</span><span class="key-count">0</span></div>
@@ -901,139 +877,87 @@
   const queryBtn = document.getElementById('query-history-btn');
   const liveBtn = document.getElementById('refresh-live-btn');
 
-  // --- 新增: 获取Top N模块的容器 ---
   const topNContainer = document.getElementById('top-n-keys');
-  const TOP_N_COUNT = 25; // 定义要显示的数量
-  document.querySelectorAll('.key-count').forEach(el => el.textContent = '0');
+  const TOP_N_COUNT = 25;
 
-  /**
-   * Clears all key counts on the UI, including the Top N module.
-   */
-  function clearUI() {
-  }
+  const keyElementMap = {};
+  const topKeyElements = [];
+  const DISPLAY_NAME_FALLBACK = {
+    'mouse_unknown_3': '右后侧键',
+    'mouse_unknown_4': '右前侧键'
+  };
 
-  /**
-   * Updates a single key element on the UI.
-   * @param {string} keyName - The data-key of the element.
-   * @param {number} count - The new count to display.
-   * @param {boolean} animate - Whether to trigger the 'pressed' animation.
-   */
-  function updateElement(keyName, count, animate) {
-    const escapedKeyName = keyName.replace(/\\/g, '\\\\');
-    const elements = document.querySelectorAll(`[data-key="${escapedKeyName}"]`);
-
-    elements.forEach(element => {
-      const countElement = element.querySelector('.key-count');
-      if (countElement) {
-        countElement.textContent = count;
-        if (animate) {
-          element.classList.add('pressed');
-          setTimeout(() => element.classList.remove('pressed'), 150);
-        }
-      }
+  function buildKeyMap() {
+    document.querySelectorAll('[data-key]').forEach(el => {
+      const key = el.dataset.key;
+      if (!keyElementMap[key]) keyElementMap[key] = [];
+      keyElementMap[key].push(el);
     });
-  }
-
-  /**
-   * --- 新增: 更新Top N显示模块的函数 ---
-   * Updates the Top N display with the most frequent keys.
-   * @param {object} data - The key count data object.
-   */
-  function updateTopN(data) {
-    if (!topNContainer) return;
-
-    // 用于将内部key名称映射为更友好的显示名称
-    const keyNameMapping = {
-      'mouse_left': '左键',
-      'mouse_middle': '中键',
-      'mouse_right': '右键',
-      'space': 'Space',
-      'enter': "Enter",
-      'backspace': 'Backspace',
-      'shift_l': 'Shift_l',
-      'shift_r': 'Shift_r',
-      'ctrl_l': 'Ctrl_l',
-      'ctrl_r': 'Ctrl_r',
-      'alt_l': 'Alt_l',
-      'alt_r': 'Alt_r',
-      'tab': 'Tab',
-      'caps_lock': 'Caps',
-      'esc': 'ESC',
-      'up': '↑',
-      'down': '↓',
-      'left': '←',
-      'right': '→',
-      'mouse_x1': "左后侧键",
-      'mouse_x2': "左前侧键",
-      'mouse_scroll_up': '滚轮↑',
-      'mouse_scroll_down': '滚轮↓',
-      'mouse_scroll_left': '右后侧键',
-      'mouse_scroll_right': '右前侧键',
-      'scroll_left_dir': '滚轮←',
-      'scroll_right_dir': '滚轮→',
-      'mouse_unknown_3': '右后侧键',
-      'mouse_unknown_4': '右前侧键'
-    };
-
-    // 1. 将数据对象转换为数组并排序
-    const sortedKeys = Object.entries(data)
-      .map(([key, count]) => ({key, count}))
-      .sort((a, b) => b.count - a.count);
-
-    // 2. 截取前N个
-    const topNKeys = sortedKeys.slice(0, TOP_N_COUNT);
-
-    // 3. 清空当前显示
     topNContainer.innerHTML = '';
-
-    // 4. 创建并添加新元素
-    topNKeys.forEach(item => {
-      // 查找原始按键元素以获取其显示名称
-      const originalElement = document.querySelector(`[data-key="${item.key.replace(/\\/g, '\\\\')}"]`);
-      let displayName = item.key.toUpperCase(); // 默认显示
-      if (originalElement) {
-        const nameSpan = originalElement.querySelector('.key-name');
-        if (nameSpan && nameSpan.textContent.trim() !== '') {
-          displayName = nameSpan.textContent;
-        }
-      }
-      // 如果有特殊映射，则使用映射的名称
-      if (keyNameMapping[item.key]) {
-        displayName = keyNameMapping[item.key];
-      }
-
-
-      const keyElement = document.createElement('div');
-      keyElement.className = 'top-key';
-
-      const nameElement = document.createElement('span');
-      nameElement.className = 'key-name';
-      nameElement.textContent = displayName;
-
-      const countElement = document.createElement('span');
-      countElement.className = 'key-count';
-      countElement.textContent = item.count;
-
-      keyElement.appendChild(nameElement);
-      keyElement.appendChild(countElement);
-      topNContainer.appendChild(keyElement);
-    });
-
-    // 用不可见占位元素补齐剩余位置，使空数据时高度一致
-    for (let i = topNKeys.length; i < TOP_N_COUNT; i++) {
-      const placeholder = document.createElement('div');
-      placeholder.className = 'top-key';
-      placeholder.style.visibility = 'hidden';
-      placeholder.style.pointerEvents = 'none';
+    for (let i = 0; i < TOP_N_COUNT; i++) {
+      const el = document.createElement('div');
+      el.className = 'top-key';
       const nameEl = document.createElement('span');
       nameEl.className = 'key-name';
-      nameEl.innerHTML = '&nbsp;';
       const countEl = document.createElement('span');
       countEl.className = 'key-count';
-      countEl.innerHTML = '&nbsp;';
-      placeholder.appendChild(nameEl);
-      placeholder.appendChild(countEl);
-      topNContainer.appendChild(placeholder);
+      el.appendChild(nameEl);
+      el.appendChild(countEl);
+      topNContainer.appendChild(el);
+      topKeyElements.push({ root: el, name: nameEl, count: countEl });
+    }
+  }
+
+  function clearUI() {
+    document.querySelectorAll('.key-count').forEach(el => el.textContent = '0');
+  }
+
+  function updateElement(keyName, count, animate) {
+    const elements = keyElementMap[keyName];
+    if (!elements) return;
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i];
+      const countEl = el.querySelector('.key-count');
+      if (countEl) {
+        countEl.textContent = count;
+        if (animate) {
+          el.classList.remove('pressed');
+          el.classList.add('pressed');
+          setTimeout(() => el.classList.remove('pressed'), 150);
+        }
+      }
+    }
+  }
+
+  function getDisplayName(key) {
+    const els = keyElementMap[key];
+    if (els) {
+      for (let i = 0; i < els.length; i++) {
+        const nameSpan = els[i].querySelector('.key-name');
+        if (nameSpan && nameSpan.textContent.trim()) return nameSpan.textContent;
+      }
+    }
+    return DISPLAY_NAME_FALLBACK[key] || key.toUpperCase();
+  }
+
+  function updateTopN(data) {
+    const sortedKeys = Object.entries(data)
+      .map(([key, count]) => ({ key, count }))
+      .sort((a, b) => b.count - a.count);
+
+    for (let i = 0; i < TOP_N_COUNT; i++) {
+      const el = topKeyElements[i];
+      if (i < sortedKeys.length) {
+        el.root.style.visibility = '';
+        el.root.style.pointerEvents = '';
+        el.name.textContent = getDisplayName(sortedKeys[i].key);
+        el.count.textContent = sortedKeys[i].count;
+      } else {
+        el.root.style.visibility = 'hidden';
+        el.root.style.pointerEvents = 'none';
+        el.name.innerHTML = '&nbsp;';
+        el.count.innerHTML = '&nbsp;';
+      }
     }
   }
 
@@ -1148,10 +1072,13 @@
     startDateInput.value = today;
     endDateInput.value = today;
 
+    buildKeyMap();
+    clearUI();
+
     queryBtn.addEventListener('click', fetchHistory);
     liveBtn.addEventListener('click', startLiveUpdates);
 
-    startLiveUpdates(); // Start in live mode by default
+    startLiveUpdates();
   }
 
   window.addEventListener('load', initialize);
