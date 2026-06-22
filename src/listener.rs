@@ -1,15 +1,21 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use parking_lot::RwLock;
 use rdev::Event;
 use rdev::EventType;
+use tokio::sync::watch;
 
 use crate::data::MonitorData;
 use crate::maps;
 
-pub fn start(data: Arc<RwLock<MonitorData>>) {
+pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, client_count: Arc<AtomicUsize>) {
     std::thread::spawn(move || {
         if let Err(e) = rdev::listen(move |event: Event| {
+            if client_count.load(Ordering::Relaxed) == 0 {
+                return;
+            }
+
             let key_name = match &event.event_type {
                 EventType::KeyRelease(key) => maps::key_to_string(key),
                 EventType::ButtonPress(button) => maps::button_to_string(button),
@@ -31,6 +37,7 @@ pub fn start(data: Arc<RwLock<MonitorData>>) {
 
             if let Some(ref name) = key_name {
                 data.write().increase_count(name);
+                change_tx.send_modify(|_| ());
             }
         }) {
             eprintln!("Listener error: {:?}", e);

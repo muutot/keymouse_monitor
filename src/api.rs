@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
 
 use axum::extract::Query;
 use axum::extract::State;
@@ -15,6 +15,7 @@ use futures::stream::Stream;
 use parking_lot::RwLock;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tokio::sync::watch;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
@@ -25,6 +26,25 @@ use crate::database::Database;
 pub struct AppState {
     pub data: Arc<RwLock<MonitorData>>,
     pub db: Arc<Mutex<Database>>,
+    pub change_tx: watch::Sender<()>,
+    pub client_count: Arc<AtomicUsize>,
+}
+
+struct SseConnectionGuard {
+    count: Arc<AtomicUsize>,
+}
+
+impl SseConnectionGuard {
+    fn new(count: Arc<AtomicUsize>) -> Self {
+        count.fetch_add(1, Ordering::Relaxed);
+        SseConnectionGuard { count }
+    }
+}
+
+impl Drop for SseConnectionGuard {
+    fn drop(&mut self) {
+        self.count.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 #[derive(Deserialize)]
@@ -83,15 +103,22 @@ async fn sse_handler(
     State(state): State<AppState>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let data = state.data.clone();
+    let rx = state.change_tx.subscribe();
+    let guard = SseConnectionGuard::new(state.client_count.clone());
 
-    let stream = futures::stream::unfold(data, |data| async move {
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        let json = {
-            let guard = data.read();
-            serde_json::to_string(&guard.get_key_counts()).unwrap()
-        };
-        Some((Ok(Event::default().data(json)), data))
-    });
+    let stream = futures::stream::unfold(
+        (data, rx, true, guard),
+        |(data, mut rx, first, guard)| async move {
+            if !first {
+                let _ = rx.changed().await;
+            }
+            let json = {
+                let guard = data.read();
+                serde_json::to_string(&guard.get_key_counts()).unwrap()
+            };
+            Some((Ok(Event::default().data(json)), (data, rx, false, guard)))
+        },
+    );
 
     Sse::new(stream)
 }
