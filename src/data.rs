@@ -74,9 +74,6 @@ impl MonitorData {
         );
     }
 
-    pub fn set_today(&mut self, today: String) {
-        self.today = today;
-    }
 }
 
 #[cfg(test)]
@@ -197,7 +194,7 @@ mod tests {
         let db = make_db();
         let mut data = make_empty();
         data.base_counts.insert("old".to_string(), 99);
-        data.set_today("2026-06-21".to_string());
+        data.today = "2026-06-21".to_string();
         data.increase_count("new_day");
 
         data.save_to_db(&db);
