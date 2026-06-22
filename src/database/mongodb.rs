@@ -25,38 +25,6 @@ pub struct MongoBackend {
     use_server_aggregation: bool,
 }
 
-fn ensure_scheme(uri: &str) -> String {
-    if uri.contains("://") {
-        return uri.to_string();
-    }
-    if uri.contains("mongodb.net") || uri.contains("mongodb-dev.net") {
-        format!("mongodb+srv://{}", uri)
-    } else {
-        format!("mongodb://{}", uri)
-    }
-}
-
-const CONNECT_TIMEOUT_MS: &str = "15000";
-const SERVER_SELECT_TIMEOUT_MS: &str = "30000";
-
-fn append_timeout(uri: &str) -> String {
-    let has_ct = uri.contains("connectTimeoutMS");
-    let has_sst = uri.contains("serverSelectionTimeoutMS");
-    if has_ct && has_sst {
-        return uri.to_string();
-    }
-    let mut s = uri.to_string();
-    if !has_ct {
-        let sep = if s.contains('?') { "&" } else { "?" };
-        s.push_str(&format!("{}connectTimeoutMS={}", sep, CONNECT_TIMEOUT_MS));
-    }
-    if !has_sst {
-        let sep = if s.contains('?') { "&" } else { "?" };
-        s.push_str(&format!("{}serverSelectionTimeoutMS={}", sep, SERVER_SELECT_TIMEOUT_MS));
-    }
-    s
-}
-
 fn redact_credentials(uri: &str) -> String {
     if let Some(at) = uri.find('@') {
         let scheme_end = uri.find("://").map(|i| i + 3).unwrap_or(0);
@@ -67,39 +35,74 @@ fn redact_credentials(uri: &str) -> String {
 }
 
 fn build_uri(cfg: &MongoConfig) -> String {
-    let uri = ensure_scheme(&cfg.uri);
+    // Build URI from individual config fields
+    let mut result = format!("{}://", cfg.protocol);
 
-    // Credentials already embedded in URI
-    if uri.contains('@') {
-        return append_timeout(&uri);
-    }
-
-    let db = &cfg.database;
-
-    // Build from separate config fields
+    // Add credentials if provided
     if let (Some(username), Some(password)) = (&cfg.username, &cfg.password) {
         if !username.is_empty() && !password.is_empty() {
-            let scheme_end = uri.find("://").map(|i| i + 3).unwrap_or(0);
-            let host = &uri[scheme_end..];
-            let scheme = &uri[..scheme_end];
             let encoded_user = url_encode(username);
             let encoded_pass = url_encode(password);
-            let mut result = format!("{}{}:{}@{}/{}", scheme, encoded_user, encoded_pass, host, db);
-            if let Some(src) = &cfg.auth_source {
-                if !src.is_empty() {
-                    result.push_str(&format!("?authSource={}", src));
-                }
-            }
-            return append_timeout(&result);
+            result.push_str(&format!("{}:{}@", encoded_user, encoded_pass));
         }
     }
 
-    let trimmed = uri.trim_end_matches('/');
-    if trimmed.contains('/') {
-        append_timeout(trimmed)
-    } else {
-        append_timeout(&format!("{}/{}", trimmed, db))
+    // Add hosts
+    if let Some(hosts) = &cfg.hosts {
+        if !hosts.is_empty() {
+            result.push_str(&hosts.join(","));
+        }
     }
+
+    // Add database
+    let db = &cfg.database;
+    if !db.is_empty() {
+        result.push_str(&format!("/{}", db));
+    }
+
+    // Build query parameters
+    let mut params = Vec::new();
+
+    // SSL
+    if cfg.ssl {
+        params.push("ssl=true".to_string());
+    }
+
+    // Replica set
+    if let Some(replica_set) = &cfg.replica_set {
+        if !replica_set.is_empty() {
+            params.push(format!("replicaSet={}", replica_set));
+        }
+    }
+
+    // Auth source
+    if !cfg.auth_source.is_empty() {
+        params.push(format!("authSource={}", cfg.auth_source));
+    }
+
+    // App name
+    if let Some(app_name) = &cfg.app_name {
+        if !app_name.is_empty() {
+            params.push(format!("appName={}", app_name));
+        }
+    }
+
+    // Add query parameters to URI
+    if !params.is_empty() {
+        result.push_str(&format!("?{}", params.join("&")));
+    }
+
+    // Add timeouts
+    if !result.contains("connectTimeoutMS") {
+        let sep = if result.contains('?') { "&" } else { "?" };
+        result.push_str(&format!("{}connectTimeoutMS={}", sep, cfg.connect_timeout_ms));
+    }
+    if !result.contains("serverSelectionTimeoutMS") {
+        let sep = if result.contains('?') { "&" } else { "?" };
+        result.push_str(&format!("{}serverSelectionTimeoutMS={}", sep, cfg.server_selection_timeout_ms));
+    }
+
+    result
 }
 
 fn url_encode(s: &str) -> String {

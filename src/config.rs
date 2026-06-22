@@ -17,24 +17,63 @@ impl Default for SqliteConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MongoConfig {
-    pub uri: String,
+    #[serde(default = "default_mongo_protocol")]
+    pub protocol: String,
     pub database: String,
     #[serde(default)]
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
+    #[serde(default = "default_auth_source")]
+    pub auth_source: String,
+    #[serde(default = "default_ssl")]
+    pub ssl: bool,
     #[serde(default)]
-    pub auth_source: Option<String>,
+    pub replica_set: Option<String>,
+    #[serde(default)]
+    pub app_name: Option<String>,
+    #[serde(default)]
+    pub hosts: Option<Vec<String>>,
+    #[serde(default = "default_connect_timeout_ms")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_server_selection_timeout_ms")]
+    pub server_selection_timeout_ms: u64,
+}
+
+fn default_mongo_protocol() -> String {
+    "mongodb".to_string()
+}
+
+fn default_auth_source() -> String {
+    "admin".to_string()
+}
+
+fn default_ssl() -> bool {
+    true
+}
+
+fn default_connect_timeout_ms() -> u64 {
+    15000
+}
+
+fn default_server_selection_timeout_ms() -> u64 {
+    30000
 }
 
 impl Default for MongoConfig {
     fn default() -> Self {
         Self {
-            uri: "mongodb://localhost:27017".to_string(),
+            protocol: default_mongo_protocol(),
             database: "keymouse_monitor".to_string(),
             username: None,
             password: None,
-            auth_source: None,
+            auth_source: default_auth_source(),
+            ssl: default_ssl(),
+            replica_set: None,
+            app_name: None,
+            hosts: None,
+            connect_timeout_ms: default_connect_timeout_ms(),
+            server_selection_timeout_ms: default_server_selection_timeout_ms(),
         }
     }
 }
@@ -106,7 +145,7 @@ impl Config {
             println!("No config.json found, using default configuration");
             println!("  backend: {}", cfg.database.backend);
             println!("  sqlite.path: {}", cfg.database.sqlite.path);
-            println!("  mongodb.uri: {}", cfg.database.mongodb.uri);
+            println!("  mongodb.protocol: {}", cfg.database.mongodb.protocol);
             println!("  mongodb.database: {}", cfg.database.mongodb.database);
             println!("  port: {}", cfg.port);
             cfg
