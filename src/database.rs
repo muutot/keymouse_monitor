@@ -33,7 +33,7 @@ impl Database {
         let mut stmt = self
             .conn
             .prepare("SELECT data FROM daily_stats WHERE date = ?1")
-            .unwrap();
+            .expect("Failed to prepare SELECT statement");
         let result: Option<String> = stmt.query_row([date_str], |row| row.get(0)).ok();
         match result {
             Some(json_str) => serde_json::from_str(&json_str).unwrap_or_default(),
@@ -49,10 +49,10 @@ impl Database {
         let mut stmt = self
             .conn
             .prepare("SELECT data FROM daily_stats WHERE date BETWEEN ?1 AND ?2")
-            .unwrap();
+            .expect("Failed to prepare range SELECT");
         let results: Vec<String> = stmt
             .query_map([start_date, end_date], |row| row.get(0))
-            .unwrap()
+            .expect("Failed to query range data")
             .filter_map(|r| r.ok())
             .collect();
 
@@ -68,13 +68,13 @@ impl Database {
     }
 
     pub fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
-        let json_str = serde_json::to_string(data).unwrap();
+        let json_str = serde_json::to_string(data).expect("Failed to serialize stats to JSON");
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO daily_stats (date, data) VALUES (?1, ?2)",
                 [date_str, &json_str],
             )
-            .unwrap();
+            .expect("Failed to upsert daily stats");
     }
 }
 

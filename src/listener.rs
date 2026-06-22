@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -16,18 +17,18 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 return;
             }
 
-            let key_name = match &event.event_type {
+            let key_name: Option<Cow<'static, str>> = match &event.event_type {
                 EventType::KeyRelease(key) => maps::key_to_string(key),
                 EventType::ButtonPress(button) => maps::button_to_string(button),
                 EventType::Wheel { delta_x, delta_y } => {
                     if *delta_y > 0 {
-                        Some("mouse_scroll_up".to_string())
+                        Some(Cow::Borrowed("mouse_scroll_up"))
                     } else if *delta_y < 0 {
-                        Some("mouse_scroll_down".to_string())
+                        Some(Cow::Borrowed("mouse_scroll_down"))
                     } else if *delta_x > 0 {
-                        Some("scroll_right_dir".to_string())
+                        Some(Cow::Borrowed("scroll_right_dir"))
                     } else if *delta_x < 0 {
-                        Some("scroll_left_dir".to_string())
+                        Some(Cow::Borrowed("scroll_left_dir"))
                     } else {
                         None
                     }
