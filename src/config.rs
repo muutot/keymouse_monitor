@@ -45,6 +45,12 @@ pub struct DatabaseConfig {
     pub backend: String,
     pub sqlite: SqliteConfig,
     pub mongodb: MongoConfig,
+    #[serde(default = "default_server_aggregation")]
+    pub use_server_aggregation: bool,
+}
+
+fn default_server_aggregation() -> bool {
+    true
 }
 
 impl Default for DatabaseConfig {
@@ -53,6 +59,7 @@ impl Default for DatabaseConfig {
             backend: "sqlite".to_string(),
             sqlite: SqliteConfig::default(),
             mongodb: MongoConfig::default(),
+            use_server_aggregation: default_server_aggregation(),
         }
     }
 }

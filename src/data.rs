@@ -92,7 +92,7 @@ impl MonitorData {
 #[cfg(test)]
 mod tests {
     use super::*;
-use crate::database::{Database, ImportMode};
+use crate::database::Database;
 
     fn make_empty() -> MonitorData {
         MonitorData {
