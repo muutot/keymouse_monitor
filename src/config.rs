@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub db_file: String,
     pub port: u16,
+    pub listener: String,
 }
 
 impl Default for Config {
@@ -13,6 +14,10 @@ impl Default for Config {
         Self {
             db_file: "monitor.sqlite".to_string(),
             port: 5000,
+            #[cfg(windows)]
+            listener: "native".to_string(),
+            #[cfg(not(windows))]
+            listener: "rdev".to_string(),
         }
     }
 }
