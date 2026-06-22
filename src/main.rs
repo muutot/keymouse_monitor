@@ -23,7 +23,9 @@ use database::Database;
 #[cfg(windows)]
 fn init_console() {
     unsafe {
-        windows_sys::Win32::System::Console::AllocConsole();
+        windows_sys::Win32::System::Console::AttachConsole(
+            windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS,
+        );
     }
 }
 
@@ -44,11 +46,23 @@ async fn main() {
     let config = Config::load();
 
     println!("Full-featured keyboard and mouse recorder backend starting...");
-    println!("Database: {}", config.db_file);
+    println!("Backend: {}", config.database.backend);
     println!("Open index.html in a browser to view.");
 
-    let db = Arc::new(Mutex::new(Database::new(&config.db_file)));
-    let data = Arc::new(RwLock::new(MonitorData::new(&db.lock().unwrap())));
+    // Initialize DB + MonitorData outside tokio runtime context.
+    // MongoDB driver uses its own internal Runtime and must NOT be
+    // called from inside a tokio async context.
+    let db_cfg = config.database.clone();
+    let (db, data): (Arc<Mutex<Database>>, Arc<RwLock<MonitorData>>) =
+        tokio::task::spawn_blocking(move || {
+            let database = Arc::new(Mutex::new(Database::connect(&db_cfg)));
+            let monitor_data = Arc::new(RwLock::new(MonitorData::new(
+                &database.lock().unwrap(),
+            )));
+            (database, monitor_data)
+        })
+        .await
+        .expect("Failed to initialize database");
 
     let client_count = Arc::new(AtomicUsize::new(0));
     let (change_tx, _) = watch::channel(());
@@ -61,10 +75,11 @@ async fn main() {
         client_count,
     };
 
+    let save_interval = config.save_interval_secs;
     let data_for_timer = Arc::clone(&data);
     let db_for_timer = Arc::clone(&db);
     tokio::task::spawn_blocking(move || loop {
-        std::thread::sleep(Duration::from_secs(60));
+        std::thread::sleep(Duration::from_secs(save_interval));
         let mut guard = data_for_timer.write();
         guard.save_to_db(&db_for_timer.lock().unwrap());
     });
