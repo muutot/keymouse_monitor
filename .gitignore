@@ -5,3 +5,9 @@ config.json
 # Rust
 target/
 Cargo.lock
+
+.idea
+dist
+build
+
+monitor.spec

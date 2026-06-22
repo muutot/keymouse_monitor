@@ -20,13 +20,13 @@ pub fn start(
                 EventType::ButtonPress(button) => maps::button_to_string(button),
                 EventType::Wheel { delta_x, delta_y } => {
                     if *delta_y > 0 {
-                        Some("mouse_scroll_up")
+                        Some("mouse_scroll_up".to_string())
                     } else if *delta_y < 0 {
-                        Some("mouse_scroll_down")
+                        Some("mouse_scroll_down".to_string())
                     } else if *delta_x > 0 {
-                        Some("mouse_scroll_right")
+                        Some("scroll_right_dir".to_string())
                     } else if *delta_x < 0 {
-                        Some("mouse_scroll_left")
+                        Some("scroll_left_dir".to_string())
                     } else {
                         None
                     }
@@ -34,7 +34,7 @@ pub fn start(
                 _ => None,
             };
 
-            if let Some(name) = key_name {
+            if let Some(ref name) = key_name {
                 let mut guard = data.lock().unwrap();
                 guard.increase_count(name);
                 if guard.total_since_save >= save_threshold {
