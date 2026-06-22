@@ -20,6 +20,18 @@ use config::Config;
 use data::MonitorData;
 use database::Database;
 
+#[cfg(windows)]
+fn init_console() {
+    unsafe {
+        windows_sys::Win32::System::Console::AllocConsole();
+    }
+}
+
+fn should_show_console() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    args.iter().any(|a| a == "--console" || a == "-c")
+}
+
 fn next_min_interval() -> Duration {
     let now = Local::now();
     let next = (now + chrono::Duration::minutes(1))
@@ -33,6 +45,11 @@ fn next_min_interval() -> Duration {
 
 #[tokio::main]
 async fn main() {
+    #[cfg(windows)]
+    if should_show_console() {
+        init_console();
+    }
+
     tracing_subscriber::fmt::init();
 
     let config = Config::load();
