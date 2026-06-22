@@ -9,7 +9,7 @@ use axum::http::StatusCode;
 use axum::response::sse::{Event, Sse};
 use axum::response::Json;
 use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, post};
 use chrono::NaiveDate;
 use futures::stream::Stream;
 use parking_lot::RwLock;
@@ -63,6 +63,8 @@ pub fn create_router(state: AppState) -> Router {
         .route("/keycounts", get(get_keycounts))
         .route("/history", get(get_history))
         .route("/events", get(sse_handler))
+        .route("/api/export", get(export_handler))
+        .route("/api/import", post(import_handler))
         .nest_service("/static", ServeDir::new("static"))
         .fallback_service(ServeDir::new(".").append_index_html_on_directories(true))
         .layer(cors)
@@ -94,9 +96,70 @@ async fn get_history(
             )
         })?;
 
-    let db = state.db.lock().unwrap();
-    let result = db.get_stats_for_range(&params.start, &params.end);
+    let db = state.db.clone();
+    let start = params.start.clone();
+    let end = params.end.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let db = db.lock().unwrap();
+        db.get_stats_for_range(&start, &end)
+    })
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Database query failed.".to_string(),
+        )
+    })?;
     Ok(Json(json!(result)))
+}
+
+async fn export_handler(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let db = state.db.clone();
+    let json_str = tokio::task::spawn_blocking(move || {
+        let db = db.lock().unwrap();
+        db.export_to_json()
+    })
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Database export failed.".to_string(),
+        )
+    })?;
+    let value: Value = serde_json::from_str(&json_str).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to serialize export: {}", e),
+        )
+    })?;
+    Ok(Json(value))
+}
+
+async fn import_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, (StatusCode, String)> {
+    let json_str = serde_json::to_string(&payload).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            format!("Invalid JSON body: {}", e),
+        )
+    })?;
+    let db = state.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut db = db.lock().unwrap();
+        db.import_from_json(&json_str);
+    })
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Database import failed.".to_string(),
+        )
+    })?;
+    Ok(Json(serde_json::json!({ "status": "ok", "message": "Import successful" })))
 }
 
 async fn sse_handler(
