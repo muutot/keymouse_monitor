@@ -68,6 +68,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/events", get(sse_handler))
         .route("/api/export", get(export_handler))
         .route("/api/import", post(import_handler))
+        .route("/api/version", get(version_handler))
         .nest_service("/static", ServeDir::new("static"))
         .fallback_service(ServeDir::new(".").append_index_html_on_directories(true))
         .layer(cors)
@@ -188,6 +189,13 @@ async fn import_handler(
         )
     })?;
     Ok(Json(serde_json::json!({ "status": "ok", "message": "Import successful", "mode": format!("{:?}", mode) })))
+}
+
+async fn version_handler() -> Json<Value> {
+    Json(json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "name": env!("CARGO_PKG_NAME"),
+    }))
 }
 
 async fn sse_handler(

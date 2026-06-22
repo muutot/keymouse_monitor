@@ -751,6 +751,7 @@
     <button type="button" id="refresh-live-btn">刷新实时数据</button>
     <button type="button" id="import-btn" style="background-color:#03dac6;">导入数据</button>
     <div class="status-display" id="status-display">当前模式: 实时数据</div>
+    <span id="version-badge" style="font-size:11px;color:#888;margin-left:auto;"></span>
 </div>
 
 <div class="main-content">
@@ -1197,6 +1198,10 @@
 
     queryBtn.addEventListener('click', fetchHistory);
     liveBtn.addEventListener('click', startLiveUpdates);
+
+    fetch('/api/version').then(r => r.json()).then(d => {
+      document.getElementById('version-badge').textContent = 'v' + d.version;
+    }).catch(() => {});
 
     startLiveUpdates();
   }
