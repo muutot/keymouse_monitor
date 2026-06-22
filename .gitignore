@@ -2,5 +2,14 @@ monitor.sqlite
 __pycache__/
 monitor.spec
 monitor.sqlite-journal
+monitor.sqlite-shm
+monitor.sqlite-wal
 dist
 build
+nul
+upx_bin/
+
+target
+.idea
+key_monitor
+Cargo.lock

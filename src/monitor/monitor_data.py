@@ -11,14 +11,17 @@ from src.type_model import MonitorT
 
 class MonitorData:
     base_counts_today: dict
-    incremental_counts = collections.defaultdict(int)
+    incremental_counts: dict
     total_clicks_since_save = 0
-    today = 0
+    today: str
 
     def __init__(self, parent):
         self.parent: MonitorT = weakref.proxy(parent)
+        self.incremental_counts = collections.defaultdict(int)
+        self.today = get_today_str()
         self._init_data()
         self.data_lock = threading.Lock()
+        self.on_increase = None
 
     @property
     def db(self):
@@ -27,12 +30,11 @@ class MonitorData:
     def _init_data(self):
         print("数据加载中...")
         # 初始化时加载当天的历史数据到内存
-        today_str = get_today_str()
-        self.base_counts_today = collections.defaultdict(int, self.db.get_stats_for_day(today_str))
+        self.base_counts_today = collections.defaultdict(int, self.db.get_stats_for_day(self.today))
         if self.base_counts_today:
-            print(f"成功从数据库加载了 {today_str} 的基础数据。")
+            print(f"成功从数据库加载了 {self.today} 的基础数据。")
         else:
-            print(f"数据库中没有找到 {today_str} 的数据，从零开始。")
+            print(f"数据库中没有找到 {self.today} 的数据，从零开始。")
 
     @staticmethod
     def _check_lock(func):
@@ -76,6 +78,9 @@ class MonitorData:
 
         if self.total_clicks_since_save >= CONFIG.save_threshold:
             self.save_to_db_locked()
+
+        if self.on_increase:
+            self.on_increase()
 
     @_check_lock
     def get_key_counts(self):

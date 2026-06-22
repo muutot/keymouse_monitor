@@ -27,6 +27,10 @@ VK_MAP = {
     35: 'end',
     36: 'home',
     237: 'fn',
+    45: 'insert',
+    46: 'delete',
+    44: 'print_screen',
+    145: 'scroll_lock',
 
     # 主要功能键
     8: 'backspace',
@@ -68,10 +72,20 @@ VK_MAP = {
     120: 'f9', 121: 'f10', 122: 'f11', 123: 'f12',
 }
 
+# pynput Button name -> our key name mapping
+BUTTON_MAP = {
+    'left': 'mouse_left',
+    'right': 'mouse_right',
+    'middle': 'mouse_middle',
+    'unknown': 'mouse_unknown',
+}
+
 
 def get_key_name(key):
     if hasattr(key, 'vk'):
         key_name = VK_MAP.get(key.vk)
+        if key_name is None:
+            key_name = f'vk_{key.vk}'
     elif (key_code := getattr(key, "_value_")) and key_code.vk in VK_MAP:
         key_name = VK_MAP.get(key._value_.vk)
     elif hasattr(key, '_name_'):
@@ -82,3 +96,14 @@ def get_key_name(key):
         except AttributeError:
             key_name = str(key).replace('Key.', '')
     return key_name
+
+
+def get_button_name(button):
+    """Map pynput mouse button to our key name (like button_to_string in Rust)."""
+    import pynput.mouse
+    btn_str = str(button).replace('Button.', '')
+    if btn_str in BUTTON_MAP:
+        if btn_str == 'unknown':
+            return 'mouse_unknown'
+        return BUTTON_MAP[btn_str]
+    return f'mouse_{btn_str}'

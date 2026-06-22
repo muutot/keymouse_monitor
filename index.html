@@ -892,7 +892,7 @@
 
 <script>
   const API_URL = 'http://127.0.0.1:5000';
-  let liveUpdateInterval;
+  let eventSource = null;
   let lastLiveData = {};
   let isHistory = false;
   const statusDisplay = document.getElementById('status-display');
@@ -970,7 +970,9 @@
       'mouse_scroll_left': '右后侧键',
       'mouse_scroll_right': '右前侧键',
       'scroll_left_dir': '滚轮←',
-      'scroll_right_dir': '滚轮→'
+      'scroll_right_dir': '滚轮→',
+      'mouse_unknown_3': '右后侧键',
+      'mouse_unknown_4': '右前侧键'
     };
 
     // 1. 将数据对象转换为数组并排序
@@ -1037,39 +1039,28 @@
 
 
   /**
-   * Fetches the latest live data and updates only the keys that have changed.
+   * Handles incoming live data from SSE and updates only the keys that have changed.
    */
-  async function fetchLiveUpdate() {
-    try {
-      const response = await fetch(`${API_URL}/keycounts`);
-      if (!response.ok) throw new Error('Network response was not ok.');
-      let animate = true;
-      if (isHistory){
-        isHistory = false
-        animate = false
+  function handleLiveData(currentData) {
+    let animate = true;
+    if (isHistory) {
+      isHistory = false;
+      animate = false;
+    }
+    const allKeys = new Set([...Object.keys(lastLiveData), ...Object.keys(currentData)]);
+    let hadChange = false;
+    allKeys.forEach(key => {
+      const oldValue = lastLiveData[key] || 0;
+      const newValue = currentData[key] || 0;
+      if (oldValue !== newValue) {
+        updateElement(key, newValue, animate);
+        hadChange = true;
       }
-      const currentData = await response.json();
-      // Combine keys from old and new data to catch all changes, including resets
-      const allKeys = new Set([...Object.keys(lastLiveData), ...Object.keys(currentData)]);
-      let had_change = false;
-      allKeys.forEach(key => {
-        const oldValue = lastLiveData[key] || 0;
-        const newValue = currentData[key] || 0;
-        if (oldValue !== newValue) {
-          updateElement(key, newValue, animate); // Animate only if the value changed
-          had_change = true;
-        }
-      });
+    });
 
-      if (had_change) {
-        updateTopN(currentData); // --- 修改: 更新Top N模块
-        lastLiveData = currentData; // Update the cache for the next comparison
-      }
-
-    } catch (error) {
-      console.error('获取实时数据失败:', error);
-      stopLiveUpdates();
-      statusDisplay.textContent = '错误: 无法连接到后端服务';
+    if (hadChange) {
+      updateTopN(currentData);
+      lastLiveData = currentData;
     }
   }
 
@@ -1114,22 +1105,39 @@
   }
 
   /**
-   * Starts the interval for fetching live data.
+   * Starts SSE connection for live data updates.
    */
   function startLiveUpdates() {
-    stopLiveUpdates(); // Ensure no multiple intervals are running
+    stopLiveUpdates(); // Close any existing EventSource
     clearUI(); // Clear any previous history data from the board
     updateTopN({}); // 预先填入占位元素，保持高度一致
-    statusDisplay.textContent = '当前模式: 实时数据';
-    fetchLiveUpdate(); // Fetch immediately to populate the board
-    liveUpdateInterval = setInterval(fetchLiveUpdate, 500);
+    statusDisplay.textContent = '当前模式: 实时数据 (长连接)';
+
+    eventSource = new EventSource(`${API_URL}/events`);
+
+    eventSource.onmessage = function(event) {
+      try {
+        const currentData = JSON.parse(event.data);
+        handleLiveData(currentData);
+      } catch (e) {
+        console.error('解析SSE数据失败:', e);
+      }
+    };
+
+    eventSource.onerror = function() {
+      statusDisplay.textContent = '连接断开, 正在自动重连...';
+      // EventSource 会自动重连
+    };
   }
 
   /**
-   * Stops the interval for fetching live data.
+   * Closes the SSE connection.
    */
   function stopLiveUpdates() {
-    clearInterval(liveUpdateInterval);
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
   }
 
   /**

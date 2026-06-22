@@ -4,7 +4,7 @@ import weakref
 
 from pynput import keyboard, mouse
 
-from src.monitor.maps import get_key_name
+from src.monitor.maps import get_key_name, get_button_name
 from src.type_model import MonitorT
 
 
@@ -35,7 +35,7 @@ class MonitorListen:
     def on_click(self, x, y, button, pressed):
         if not pressed:
             return
-        button_name = f"mouse_{str(button).replace('Button.', '')}"
+        button_name = get_button_name(button)
         self.handle_event(button_name)
 
     def on_scroll(self, x, y, dx, dy):
@@ -44,9 +44,9 @@ class MonitorListen:
         elif dy < 0:
             self.handle_event("mouse_scroll_down")
         if dx > 0:
-            self.handle_event("mouse_scroll_right")
+            self.handle_event("scroll_right_dir")
         elif dx < 0:
-            self.handle_event("mouse_scroll_left")
+            self.handle_event("scroll_left_dir")
 
     def handle_event(self, key_name: str):
         """统一处理键盘和鼠标事件"""
