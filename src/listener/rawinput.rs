@@ -1,4 +1,3 @@
-use std::mem;
 use std::ptr::null_mut;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
@@ -13,6 +12,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::data::MonitorData;
 use crate::listener::{common, keyboard};
+
+const RAW_BUF_SIZE: usize = 64;
 
 static mut KEYBOARD_HOOK: HHOOK = 0;
 
@@ -44,82 +45,73 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
     CallNextHookEx(0, code, wparam, lparam)
 }
 
-unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    if msg == WM_INPUT {
-        let mut size: u32 = 0;
-        GetRawInputData(lparam as _, RID_INPUT, null_mut(), &mut size, mem::size_of::<RAWINPUTHEADER>() as u32);
-        if size == 0 {
-            return 0;
-        }
-
-        let mut buf = vec![0u8; size as usize];
-        let written = GetRawInputData(
-            lparam as _,
-            RID_INPUT,
-            buf.as_mut_ptr() as *mut _,
-            &mut size,
-            mem::size_of::<RAWINPUTHEADER>() as u32,
-        );
-        if written == u32::MAX {
-            return 0;
-        }
-
-        let raw = &*(buf.as_ptr() as *const RAWINPUT);
-        if raw.header.dwType != RIM_TYPEMOUSE {
-            return 0;
-        }
-
-        let mouse = &raw.data.mouse;
-        let flags = mouse.Anonymous.Anonymous.usButtonFlags as u32;
-        if flags == 0 {
-            return 0;
-        }
-
-        if let Some(ref cb) = CB {
-            let data = mouse.Anonymous.Anonymous.usButtonData;
-
-            if flags & RI_MOUSE_LEFT_BUTTON_DOWN != 0 {
-                common::process_event(&EventType::ButtonPress(Button::Left), cb);
-            }
-            if flags & RI_MOUSE_LEFT_BUTTON_UP != 0 {
-                common::process_event(&EventType::ButtonRelease(Button::Left), cb);
-            }
-            if flags & RI_MOUSE_RIGHT_BUTTON_DOWN != 0 {
-                common::process_event(&EventType::ButtonPress(Button::Right), cb);
-            }
-            if flags & RI_MOUSE_RIGHT_BUTTON_UP != 0 {
-                common::process_event(&EventType::ButtonRelease(Button::Right), cb);
-            }
-            if flags & RI_MOUSE_MIDDLE_BUTTON_DOWN != 0 {
-                common::process_event(&EventType::ButtonPress(Button::Middle), cb);
-            }
-            if flags & RI_MOUSE_MIDDLE_BUTTON_UP != 0 {
-                common::process_event(&EventType::ButtonRelease(Button::Middle), cb);
-            }
-            if flags & RI_MOUSE_BUTTON_4_DOWN != 0 {
-                common::process_event(&EventType::ButtonPress(Button::Unknown(data as u8)), cb);
-            }
-            if flags & RI_MOUSE_BUTTON_4_UP != 0 {
-                common::process_event(&EventType::ButtonRelease(Button::Unknown(data as u8)), cb);
-            }
-            if flags & RI_MOUSE_BUTTON_5_DOWN != 0 {
-                common::process_event(&EventType::ButtonPress(Button::Unknown(data as u8)), cb);
-            }
-            if flags & RI_MOUSE_BUTTON_5_UP != 0 {
-                common::process_event(&EventType::ButtonRelease(Button::Unknown(data as u8)), cb);
-            }
-            if flags & RI_MOUSE_WHEEL != 0 {
-                let delta = data as i16;
-                common::process_event(&EventType::Wheel { delta_x: 0, delta_y: (delta / 120) as i64 }, cb);
-            }
-            if flags & RI_MOUSE_HWHEEL != 0 {
-                let delta = data as i16;
-                common::process_event(&EventType::Wheel { delta_x: (delta / 120) as i64, delta_y: 0 }, cb);
-            }
-        }
-        return 0;
+unsafe fn process_raw_input(lparam: LPARAM) {
+    let mut buf = [0u8; RAW_BUF_SIZE];
+    let mut size = RAW_BUF_SIZE as u32;
+    let written = GetRawInputData(
+        lparam as _,
+        RID_INPUT,
+        buf.as_mut_ptr() as *mut _,
+        &mut size,
+        std::mem::size_of::<RAWINPUTHEADER>() as u32,
+    );
+    if written == u32::MAX || written < std::mem::size_of::<RAWINPUTHEADER>() as u32 {
+        return;
     }
-    DefWindowProcA(hwnd, msg, wparam, lparam)
+
+    let raw = &*(buf.as_ptr() as *const RAWINPUT);
+    if raw.header.dwType != RIM_TYPEMOUSE {
+        return;
+    }
+
+    let mouse = &raw.data.mouse;
+    let flags = mouse.Anonymous.Anonymous.usButtonFlags as u32;
+    if flags == 0 {
+        return;
+    }
+
+    if let Some(ref cb) = CB {
+        let data = mouse.Anonymous.Anonymous.usButtonData;
+
+        if flags & RI_MOUSE_LEFT_BUTTON_DOWN != 0 {
+            common::process_event(&EventType::ButtonPress(Button::Left), cb);
+        }
+        if flags & RI_MOUSE_LEFT_BUTTON_UP != 0 {
+            common::process_event(&EventType::ButtonRelease(Button::Left), cb);
+        }
+        if flags & RI_MOUSE_RIGHT_BUTTON_DOWN != 0 {
+            common::process_event(&EventType::ButtonPress(Button::Right), cb);
+        }
+        if flags & RI_MOUSE_RIGHT_BUTTON_UP != 0 {
+            common::process_event(&EventType::ButtonRelease(Button::Right), cb);
+        }
+        if flags & RI_MOUSE_MIDDLE_BUTTON_DOWN != 0 {
+            common::process_event(&EventType::ButtonPress(Button::Middle), cb);
+        }
+        if flags & RI_MOUSE_MIDDLE_BUTTON_UP != 0 {
+            common::process_event(&EventType::ButtonRelease(Button::Middle), cb);
+        }
+        if flags & RI_MOUSE_BUTTON_4_DOWN != 0 {
+            common::process_event(&EventType::ButtonPress(Button::Unknown(data as u8)), cb);
+        }
+        if flags & RI_MOUSE_BUTTON_4_UP != 0 {
+            common::process_event(&EventType::ButtonRelease(Button::Unknown(data as u8)), cb);
+        }
+        if flags & RI_MOUSE_BUTTON_5_DOWN != 0 {
+            common::process_event(&EventType::ButtonPress(Button::Unknown(data as u8)), cb);
+        }
+        if flags & RI_MOUSE_BUTTON_5_UP != 0 {
+            common::process_event(&EventType::ButtonRelease(Button::Unknown(data as u8)), cb);
+        }
+        if flags & RI_MOUSE_WHEEL != 0 {
+            let delta = data as i16;
+            common::process_event(&EventType::Wheel { delta_x: 0, delta_y: (delta / 120) as i64 }, cb);
+        }
+        if flags & RI_MOUSE_HWHEEL != 0 {
+            let delta = data as i16;
+            common::process_event(&EventType::Wheel { delta_x: (delta / 120) as i64, delta_y: 0 }, cb);
+        }
+    }
 }
 
 pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, client_count: Arc<AtomicUsize>) {
@@ -131,7 +123,7 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
             let hinst = GetModuleHandleA(null_mut());
             let wc = WNDCLASSA {
                 style: 0,
-                lpfnWndProc: Some(wnd_proc),
+                lpfnWndProc: Some(DefWindowProcA),
                 cbClsExtra: 0,
                 cbWndExtra: 0,
                 hInstance: hinst,
@@ -168,7 +160,7 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 dwFlags: RIDEV_INPUTSINK | RIDEV_NOLEGACY,
                 hwndTarget: hwnd,
             };
-            if RegisterRawInputDevices(&rid, 1, mem::size_of::<RAWINPUTDEVICE>() as u32) == 0 {
+            if RegisterRawInputDevices(&rid, 1, std::mem::size_of::<RAWINPUTDEVICE>() as u32) == 0 {
                 eprintln!("Failed to register raw input device");
                 return;
             }
@@ -179,13 +171,17 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 return;
             }
 
-            let mut msg = mem::zeroed();
+            let mut msg = std::mem::zeroed();
             while GetMessageA(&mut msg, 0 as HWND, 0, 0) != 0 {
-                TranslateMessage(&msg);
-                DispatchMessageA(&msg);
+                if msg.message == WM_INPUT {
+                    process_raw_input(msg.lParam);
+                } else {
+                    TranslateMessage(&msg);
+                    DispatchMessageA(&msg);
+                }
             }
         }
     });
 
-    println!("Native Windows listener (raw input) started.");
+    println!("Raw Input listener started.");
 }
