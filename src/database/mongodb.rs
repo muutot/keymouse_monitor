@@ -35,11 +35,24 @@ fn ensure_scheme(uri: &str) -> String {
     }
 }
 
-const CONNECT_APP_NAME: &str = "Cluster0";
+const CONNECT_TIMEOUT_MS: &str = "15000";
 const SERVER_SELECT_TIMEOUT_MS: &str = "30000";
 
 fn append_timeout(uri: &str) -> String {
+    let has_ct = uri.contains("connectTimeoutMS");
+    let has_sst = uri.contains("serverSelectionTimeoutMS");
+    if has_ct && has_sst {
+        return uri.to_string();
+    }
     let mut s = uri.to_string();
+    if !has_ct {
+        let sep = if s.contains('?') { "&" } else { "?" };
+        s.push_str(&format!("{}connectTimeoutMS={}", sep, CONNECT_TIMEOUT_MS));
+    }
+    if !has_sst {
+        let sep = if s.contains('?') { "&" } else { "?" };
+        s.push_str(&format!("{}serverSelectionTimeoutMS={}", sep, SERVER_SELECT_TIMEOUT_MS));
+    }
     s
 }
 
@@ -240,19 +253,5 @@ impl DatabaseBackend for MongoBackend {
         })
     }
 
-    fn import_from_json(&mut self, json_str: &str) {
-        let value: serde_json::Value =
-            serde_json::from_str(json_str).expect("Failed to parse import JSON");
-        let records = value
-            .get("records")
-            .and_then(|v| v.as_object())
-            .expect("Import JSON missing 'records' object");
 
-        for (date, data_value) in records {
-            let data: HashMap<String, u64> =
-                serde_json::from_value(data_value.clone()).unwrap_or_default();
-            self.upsert_day_stats(date, &data);
-        }
-        println!("[mongodb] Imported {} date records from JSON.", records.len());
-    }
 }

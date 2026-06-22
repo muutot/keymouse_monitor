@@ -19,8 +19,11 @@ use tokio::sync::watch;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
+use chrono::Local;
+use std::collections::HashMap;
+
 use crate::data::MonitorData;
-use crate::database::Database;
+use crate::database::{Database, ImportMode};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -137,10 +140,17 @@ async fn export_handler(
     Ok(Json(value))
 }
 
+#[derive(Deserialize)]
+pub struct ImportParams {
+    pub mode: Option<String>,
+}
+
 async fn import_handler(
     State(state): State<AppState>,
+    Query(params): Query<ImportParams>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, (StatusCode, String)> {
+    let mode = ImportMode::from_str(params.mode.as_deref().unwrap_or("overwrite"));
     let json_str = serde_json::to_string(&payload).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -148,9 +158,27 @@ async fn import_handler(
         )
     })?;
     let db = state.db.clone();
+    let data = state.data.clone();
+    let today = Local::now().format("%Y-%m-%d").to_string();
     tokio::task::spawn_blocking(move || {
+        // Parse today's records from import data (before moving json_str)
+        let today_counts: HashMap<String, u64> = serde_json::from_str(&json_str)
+            .ok()
+            .and_then(|v: serde_json::Value| {
+                v.get("records")
+                    .and_then(|r| r.as_object())
+                    .and_then(|records| records.get(&today).cloned())
+                    .and_then(|v| serde_json::from_value(v).ok())
+            })
+            .unwrap_or_default();
+
+        // Lock in same order as timer (data first, then db) to avoid deadlock
+        let mut guard = data.write();
         let mut db = db.lock().unwrap();
-        db.import_from_json(&json_str);
+        db.import_from_json(&json_str, mode);
+        if !today_counts.is_empty() {
+            guard.import_today_data(&today_counts, mode);
+        }
     })
     .await
     .map_err(|_| {
@@ -159,7 +187,7 @@ async fn import_handler(
             "Database import failed.".to_string(),
         )
     })?;
-    Ok(Json(serde_json::json!({ "status": "ok", "message": "Import successful" })))
+    Ok(Json(serde_json::json!({ "status": "ok", "message": "Import successful", "mode": format!("{:?}", mode) })))
 }
 
 async fn sse_handler(
