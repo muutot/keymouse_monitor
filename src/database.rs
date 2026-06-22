@@ -10,7 +10,10 @@ pub struct Database {
 impl Database {
     pub fn new(db_file: &str) -> Self {
         let conn = Connection::open(db_file).expect("Failed to open database");
-        conn.execute_batch("PRAGMA journal_mode=WAL").ok();
+        conn.execute_batch("PRAGMA journal_mode=WAL")
+            .expect("Failed to set WAL mode");
+        conn.execute_batch("PRAGMA synchronous=NORMAL")
+            .expect("Failed to set synchronous mode");
         let db = Self { conn };
         db.init_db();
         db
@@ -32,7 +35,7 @@ impl Database {
     pub fn get_stats_for_day(&self, date_str: &str) -> HashMap<String, u64> {
         let mut stmt = self
             .conn
-            .prepare("SELECT data FROM daily_stats WHERE date = ?1")
+            .prepare_cached("SELECT data FROM daily_stats WHERE date = ?1")
             .expect("Failed to prepare SELECT statement");
         let result: Option<String> = stmt.query_row([date_str], |row| row.get(0)).ok();
         match result {
@@ -48,16 +51,15 @@ impl Database {
     ) -> HashMap<String, u64> {
         let mut stmt = self
             .conn
-            .prepare("SELECT data FROM daily_stats WHERE date BETWEEN ?1 AND ?2")
+            .prepare_cached("SELECT data FROM daily_stats WHERE date BETWEEN ?1 AND ?2")
             .expect("Failed to prepare range SELECT");
-        let results: Vec<String> = stmt
-            .query_map([start_date, end_date], |row| row.get(0))
-            .expect("Failed to query range data")
-            .filter_map(|r| r.ok())
-            .collect();
+        let results = stmt
+            .query_map([start_date, end_date], |row| row.get::<_, String>(0))
+            .expect("Failed to query range data");
 
         let mut aggregated = HashMap::new();
-        for json_str in results {
+        for result in results {
+            let Ok(json_str) = result else { continue };
             let day_data: HashMap<String, u64> =
                 serde_json::from_str(&json_str).unwrap_or_default();
             for (key, value) in day_data {
