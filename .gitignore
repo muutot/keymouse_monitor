@@ -9,4 +9,8 @@ target/
 dist
 build
 
-monitor.spec
+.venv/
+*.spec
+__pycache__/
+*.sqlite-shm
+*.sqlite-wal
