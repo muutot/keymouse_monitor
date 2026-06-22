@@ -52,7 +52,7 @@ async fn main() {
 
     let client_count = Arc::new(AtomicUsize::new(0));
     let (change_tx, _) = watch::channel(());
-    listener::start(Arc::clone(&data), change_tx.clone(), Arc::clone(&client_count));
+    listener::start(&config.listener, Arc::clone(&data), change_tx.clone(), Arc::clone(&client_count));
 
     let state = AppState {
         data: Arc::clone(&data),
