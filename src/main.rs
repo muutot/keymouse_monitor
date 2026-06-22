@@ -1,11 +1,13 @@
 #![windows_subsystem = "windows"]
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Mutex;
 
 use chrono::Local;
 use chrono::Timelike;
 use parking_lot::RwLock;
+use tokio::sync::watch;
 use tokio::time::Duration;
 
 mod api;
@@ -61,11 +63,15 @@ async fn main() {
     let db = Arc::new(Mutex::new(Database::new(&config.db_file)));
     let data = Arc::new(RwLock::new(MonitorData::new(&db.lock().unwrap())));
 
-    listener::start(Arc::clone(&data));
+    let client_count = Arc::new(AtomicUsize::new(0));
+    let (change_tx, _) = watch::channel(());
+    listener::start(Arc::clone(&data), change_tx.clone(), Arc::clone(&client_count));
 
     let state = AppState {
         data: Arc::clone(&data),
         db: Arc::clone(&db),
+        change_tx,
+        client_count,
     };
 
     let data_for_timer = Arc::clone(&data);
