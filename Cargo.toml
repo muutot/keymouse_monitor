@@ -1,3 +1,10 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "tools/key_viewer",
+]
+
 [package]
 name = "keymouse-monitor"
 version = "0.1.0"

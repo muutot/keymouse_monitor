@@ -16,6 +16,9 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
             if client_count.load(Ordering::Relaxed) == 0 {
                 return;
             }
+            if matches!(event.event_type, EventType::MouseMove { .. }) {
+                return;
+            }
 
             let key_name: Option<Cow<'static, str>> = match &event.event_type {
                 EventType::KeyRelease(key) => maps::key_to_string(key),

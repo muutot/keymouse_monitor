@@ -507,6 +507,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "key-viewer"
+version = "0.1.0"
+dependencies = [
+ "rdev",
+]
+
+[[package]]
 name = "keymouse-monitor"
 version = "0.1.0"
 dependencies = [
