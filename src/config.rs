@@ -15,7 +15,7 @@ impl Default for Config {
             db_file: "monitor.sqlite".to_string(),
             port: 5000,
             #[cfg(windows)]
-            listener: "native".to_string(),
+            listener: "rawinput".to_string(),
             #[cfg(not(windows))]
             listener: "rdev".to_string(),
         }
