@@ -84,19 +84,19 @@ async fn get_keycounts(State(state): State<AppState>) -> Json<Value> {
 async fn get_history(
     State(state): State<AppState>,
     Query(params): Query<HistoryParams>,
-) -> Result<Json<Value>, (StatusCode, String)> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     NaiveDate::parse_from_str(&params.start, "%Y-%m-%d")
         .map_err(|_| {
             (
                 StatusCode::BAD_REQUEST,
-                "Invalid date format, please use YYYY-MM-DD.".to_string(),
+                Json(json!({"error": "Invalid date format, please use YYYY-MM-DD."})),
             )
         })?;
     NaiveDate::parse_from_str(&params.end, "%Y-%m-%d")
         .map_err(|_| {
             (
                 StatusCode::BAD_REQUEST,
-                "Invalid date format, please use YYYY-MM-DD.".to_string(),
+                Json(json!({"error": "Invalid date format, please use YYYY-MM-DD."})),
             )
         })?;
 
@@ -111,7 +111,7 @@ async fn get_history(
     .map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Database query failed.".to_string(),
+            Json(json!({"error": "Database query failed."})),
         )
     })?;
     Ok(Json(json!(result)))
@@ -119,7 +119,7 @@ async fn get_history(
 
 async fn export_handler(
     State(state): State<AppState>,
-) -> Result<Json<Value>, (StatusCode, String)> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let db = state.db.clone();
     let json_str = tokio::task::spawn_blocking(move || {
         let db = db.lock().unwrap();
@@ -129,13 +129,13 @@ async fn export_handler(
     .map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Database export failed.".to_string(),
+            Json(json!({"error": "Database export failed."})),
         )
     })?;
     let value: Value = serde_json::from_str(&json_str).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to serialize export: {}", e),
+            Json(json!({"error": format!("Failed to serialize export: {}", e)})),
         )
     })?;
     Ok(Json(value))
@@ -150,19 +150,18 @@ async fn import_handler(
     State(state): State<AppState>,
     Query(params): Query<ImportParams>,
     Json(payload): Json<Value>,
-) -> Result<Json<Value>, (StatusCode, String)> {
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     let mode = ImportMode::from_str(params.mode.as_deref().unwrap_or("overwrite"));
     let json_str = serde_json::to_string(&payload).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            format!("Invalid JSON body: {}", e),
+            Json(json!({"error": format!("Invalid JSON body: {}", e)})),
         )
     })?;
     let db = state.db.clone();
     let data = state.data.clone();
     let today = Local::now().format("%Y-%m-%d").to_string();
     tokio::task::spawn_blocking(move || {
-        // Parse today's records from import data (before moving json_str)
         let today_counts: HashMap<String, u64> = serde_json::from_str(&json_str)
             .ok()
             .and_then(|v: serde_json::Value| {
@@ -173,7 +172,6 @@ async fn import_handler(
             })
             .unwrap_or_default();
 
-        // Lock in same order as timer (data first, then db) to avoid deadlock
         let mut guard = data.write();
         let mut db = db.lock().unwrap();
         db.import_from_json(&json_str, mode);
@@ -185,7 +183,7 @@ async fn import_handler(
     .map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            "Database import failed.".to_string(),
+            Json(json!({"error": "Database import failed."})),
         )
     })?;
     Ok(Json(serde_json::json!({ "status": "ok", "message": "Import successful", "mode": format!("{:?}", mode) })))
