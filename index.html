@@ -1256,7 +1256,7 @@
       modalResult.style.display = 'block';
     } catch (e) {
       modalResult.className = 'error';
-      modalResult.textContent = '错误: ' + e.message;
+      modalResult.textContent = e.message || '错误: ' + e;
       modalResult.style.display = 'block';
     } finally {
       modalImport.disabled = false;
