@@ -6,7 +6,8 @@ use parking_lot::RwLock;
 use rdev::{Event, EventType};
 use tokio::sync::watch;
 
-use crate::{tinfo, terror, data::MonitorData, maps};
+use crate::{tinfo, terror, data::MonitorData};
+use keymouse_common::maps;
 
 pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, client_count: Arc<AtomicUsize>) {
     thread::spawn(move || {

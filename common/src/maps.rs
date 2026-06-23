@@ -52,7 +52,6 @@ pub fn key_to_string(key: &Key) -> Option<Cow<'static, str>> {
         Key::Tab => borrowed!("tab"),
         Key::UpArrow => borrowed!("up"),
 
-        // Letter keys
         Key::KeyA => borrowed!("a"),
         Key::KeyB => borrowed!("b"),
         Key::KeyC => borrowed!("c"),
@@ -80,7 +79,6 @@ pub fn key_to_string(key: &Key) -> Option<Cow<'static, str>> {
         Key::KeyY => borrowed!("y"),
         Key::KeyZ => borrowed!("z"),
 
-        // Number row
         Key::Num0 => borrowed!("0"),
         Key::Num1 => borrowed!("1"),
         Key::Num2 => borrowed!("2"),
@@ -92,7 +90,6 @@ pub fn key_to_string(key: &Key) -> Option<Cow<'static, str>> {
         Key::Num8 => borrowed!("8"),
         Key::Num9 => borrowed!("9"),
 
-        // Symbol keys
         Key::BackQuote => borrowed!("`"),
         Key::Minus => borrowed!("-"),
         Key::Equal => borrowed!("="),
@@ -106,7 +103,6 @@ pub fn key_to_string(key: &Key) -> Option<Cow<'static, str>> {
         Key::Dot => borrowed!("."),
         Key::Slash => borrowed!("/"),
 
-        // Numpad
         Key::Kp0 => borrowed!("numpad0"),
         Key::Kp1 => borrowed!("numpad1"),
         Key::Kp2 => borrowed!("numpad2"),
@@ -143,104 +139,37 @@ pub fn button_to_string(button: &Button) -> Option<Cow<'static, str>> {
 
 pub fn vk_to_string(vk: u32) -> Option<&'static str> {
     match vk {
-        48 => Some("0"),
-        49 => Some("1"),
-        50 => Some("2"),
-        51 => Some("3"),
-        52 => Some("4"),
-        53 => Some("5"),
-        54 => Some("6"),
-        55 => Some("7"),
-        56 => Some("8"),
-        57 => Some("9"),
-        96 => Some("numpad0"),
-        97 => Some("numpad1"),
-        98 => Some("numpad2"),
-        99 => Some("numpad3"),
-        100 => Some("numpad4"),
-        101 => Some("numpad5"),
-        102 => Some("numpad6"),
-        103 => Some("numpad7"),
-        104 => Some("numpad8"),
+        48 => Some("0"), 49 => Some("1"), 50 => Some("2"), 51 => Some("3"),
+        52 => Some("4"), 53 => Some("5"), 54 => Some("6"), 55 => Some("7"),
+        56 => Some("8"), 57 => Some("9"),
+        96 => Some("numpad0"), 97 => Some("numpad1"), 98 => Some("numpad2"),
+        99 => Some("numpad3"), 100 => Some("numpad4"), 101 => Some("numpad5"),
+        102 => Some("numpad6"), 103 => Some("numpad7"), 104 => Some("numpad8"),
         105 => Some("numpad9"),
-        106 => Some("numpad_multiply"),
-        107 => Some("numpad_add"),
-        109 => Some("numpad_subtract"),
-        110 => Some("numpad_decimal"),
-        111 => Some("numpad_divide"),
-        144 => Some("numpad_lock"),
-        65 => Some("a"),
-        66 => Some("b"),
-        67 => Some("c"),
-        68 => Some("d"),
-        69 => Some("e"),
-        70 => Some("f"),
-        71 => Some("g"),
-        72 => Some("h"),
-        73 => Some("i"),
-        74 => Some("j"),
-        75 => Some("k"),
-        76 => Some("l"),
-        77 => Some("m"),
-        78 => Some("n"),
-        79 => Some("o"),
-        80 => Some("p"),
-        81 => Some("q"),
-        82 => Some("r"),
-        83 => Some("s"),
-        84 => Some("t"),
-        85 => Some("u"),
-        86 => Some("v"),
-        87 => Some("w"),
-        88 => Some("x"),
-        89 => Some("y"),
-        90 => Some("z"),
-        91 => Some("meta"),
-        19 => Some("pause"),
-        34 => Some("page_down"),
-        33 => Some("page_up"),
-        35 => Some("end"),
-        36 => Some("home"),
-        237 => Some("fn"),
-        8 => Some("backspace"),
-        9 => Some("tab"),
-        13 => Some("enter"),
-        20 => Some("caps_lock"),
-        27 => Some("esc"),
-        32 => Some("space"),
-        16 => Some("shift"),
-        160 => Some("shift_l"),
-        161 => Some("shift_r"),
-        17 => Some("ctrl"),
-        162 => Some("ctrl_l"),
-        163 => Some("ctrl_r"),
-        18 => Some("alt"),
-        164 => Some("alt_l"),
-        165 => Some("alt_r"),
+        106 => Some("numpad_multiply"), 107 => Some("numpad_add"),
+        109 => Some("numpad_subtract"), 110 => Some("numpad_decimal"),
+        111 => Some("numpad_divide"), 144 => Some("numpad_lock"),
+        65 => Some("a"), 66 => Some("b"), 67 => Some("c"), 68 => Some("d"),
+        69 => Some("e"), 70 => Some("f"), 71 => Some("g"), 72 => Some("h"),
+        73 => Some("i"), 74 => Some("j"), 75 => Some("k"), 76 => Some("l"),
+        77 => Some("m"), 78 => Some("n"), 79 => Some("o"), 80 => Some("p"),
+        81 => Some("q"), 82 => Some("r"), 83 => Some("s"), 84 => Some("t"),
+        85 => Some("u"), 86 => Some("v"), 87 => Some("w"), 88 => Some("x"),
+        89 => Some("y"), 90 => Some("z"), 91 => Some("meta"),
+        19 => Some("pause"), 34 => Some("page_down"), 33 => Some("page_up"),
+        35 => Some("end"), 36 => Some("home"), 237 => Some("fn"),
+        8 => Some("backspace"), 9 => Some("tab"), 13 => Some("enter"),
+        20 => Some("caps_lock"), 27 => Some("esc"), 32 => Some("space"),
+        16 => Some("shift"), 160 => Some("shift_l"), 161 => Some("shift_r"),
+        17 => Some("ctrl"), 162 => Some("ctrl_l"), 163 => Some("ctrl_r"),
+        18 => Some("alt"), 164 => Some("alt_l"), 165 => Some("alt_r"),
         93 => Some("menu"),
-        186 => Some(";"),
-        187 => Some("="),
-        188 => Some(","),
-        189 => Some("-"),
-        190 => Some("."),
-        191 => Some("/"),
-        192 => Some("`"),
-        219 => Some("["),
-        220 => Some("backslash"),
-        221 => Some("]"),
-        222 => Some("'"),
-        112 => Some("f1"),
-        113 => Some("f2"),
-        114 => Some("f3"),
-        115 => Some("f4"),
-        116 => Some("f5"),
-        117 => Some("f6"),
-        118 => Some("f7"),
-        119 => Some("f8"),
-        120 => Some("f9"),
-        121 => Some("f10"),
-        122 => Some("f11"),
-        123 => Some("f12"),
+        186 => Some(";"), 187 => Some("="), 188 => Some(","), 189 => Some("-"),
+        190 => Some("."), 191 => Some("/"), 192 => Some("`"),
+        219 => Some("["), 220 => Some("backslash"), 221 => Some("]"), 222 => Some("'"),
+        112 => Some("f1"), 113 => Some("f2"), 114 => Some("f3"), 115 => Some("f4"),
+        116 => Some("f5"), 117 => Some("f6"), 118 => Some("f7"), 119 => Some("f8"),
+        120 => Some("f9"), 121 => Some("f10"), 122 => Some("f11"), 123 => Some("f12"),
         _ => None,
     }
 }
@@ -248,8 +177,6 @@ pub fn vk_to_string(vk: u32) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── key_to_string ──────────────────────────────────────────
 
     #[test]
     fn test_modifier_keys() {
@@ -365,8 +292,6 @@ mod tests {
         assert_eq!(key_to_string(&Key::Unknown(999)), None);
         assert_eq!(key_to_string(&Key::Unknown(0)), None);
     }
-
-    // ── button_to_string ───────────────────────────────────────
 
     #[test]
     fn test_standard_mouse_buttons() {

@@ -5,7 +5,8 @@ use parking_lot::RwLock;
 use rdev::EventType;
 use tokio::sync::watch;
 
-use crate::{data::MonitorData, maps};
+use crate::data::MonitorData;
+use keymouse_common::maps;
 
 pub struct CallbackData {
     pub data: Arc<RwLock<MonitorData>>,

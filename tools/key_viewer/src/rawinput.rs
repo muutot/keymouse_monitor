@@ -124,7 +124,7 @@ unsafe fn process_keyboard(kb: &RAWKEYBOARD) {
         "按下"
     };
     let vk = kb.VKey as u32;
-    let mapped = keymouse_monitor::maps::vk_to_string(vk).unwrap_or("(无映射)");
+    let mapped = keymouse_common::maps::vk_to_string(vk).unwrap_or("(无映射)");
     let info = format!("VK={}", vk);
     let name = msg_name(kb.Message);
     println!(
