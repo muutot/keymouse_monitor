@@ -1154,7 +1154,7 @@
    * Starts SSE connection for live data updates.
    */
   function startLiveUpdates() {
-    stopLiveUpdates(); // Close any existing EventSource
+    if (eventSource) return; // 已经是实时模式，无需重置
     clearUI(); // Clear any previous history data from the board
     updateTopN({}); // 预先填入占位元素，保持高度一致
     lastLiveData = {}; // 清空缓存，确保首次SSE事件能触发完整UI刷新
