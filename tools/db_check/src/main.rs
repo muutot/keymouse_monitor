@@ -5,14 +5,14 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-use keymouse_monitor::config::DatabaseConfig;
+use keymouse_common::config::DatabaseConfig;
 
 #[derive(Deserialize)]
 struct Config {
     database: DatabaseConfig,
 }
 
-fn check_sqlite(cfg: &keymouse_monitor::config::SqliteConfig) -> bool {
+fn check_sqlite(cfg: &keymouse_common::config::SqliteConfig) -> bool {
     print!("\n  file:  {}", cfg.path);
     let start = Instant::now();
 
@@ -41,7 +41,7 @@ fn check_sqlite(cfg: &keymouse_monitor::config::SqliteConfig) -> bool {
 }
 
 fn redacted_uri(uri: &str) -> String {
-    keymouse_monitor::database::redact_credentials(uri)
+    keymouse_common::database::redact_credentials(uri)
 }
 
 fn extract_hostport(uri: &str) -> Option<String> {
@@ -62,8 +62,8 @@ fn extract_hostport(uri: &str) -> Option<String> {
     if host_part.is_empty() { None } else { Some(host_part.to_string()) }
 }
 
-fn check_mongodb(cfg: &keymouse_monitor::config::MongoConfig) -> bool {
-    let uri = keymouse_monitor::database::build_uri(cfg);
+fn check_mongodb(cfg: &keymouse_common::config::MongoConfig) -> bool {
+    let uri = keymouse_common::database::build_uri(cfg);
 
     println!("\n  uri:   {}", redacted_uri(&uri));
     let start = Instant::now();

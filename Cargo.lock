@@ -504,7 +504,7 @@ name = "db-check"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "keymouse-monitor",
+ "keymouse-common",
  "mongodb",
  "rusqlite",
  "serde",
@@ -1346,9 +1346,17 @@ dependencies = [
 name = "key-viewer"
 version = "0.1.0"
 dependencies = [
- "keymouse-monitor",
+ "keymouse-common",
  "rdev",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "keymouse-common"
+version = "0.1.0"
+dependencies = [
+ "rdev",
+ "serde",
 ]
 
 [[package]]
@@ -1361,6 +1369,7 @@ dependencies = [
  "futures",
  "ico",
  "image",
+ "keymouse-common",
  "mongodb",
  "parking_lot",
  "rdev",

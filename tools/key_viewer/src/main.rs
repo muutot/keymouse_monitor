@@ -51,7 +51,7 @@ fn format_event(event: &Event) -> (String, String, String, String, String) {
                 "释放"
             };
             let key_info = format!("{:?}", key);
-            let mapped = keymouse_monitor::maps::key_to_string(key)
+            let mapped = keymouse_common::maps::key_to_string(key)
                 .map(|c| c.into_owned())
                 .unwrap_or_else(|| "(无映射)".to_string());
             let vk = if let Key::Unknown(code) = key {
@@ -68,7 +68,7 @@ fn format_event(event: &Event) -> (String, String, String, String, String) {
                 "释放"
             };
             let key_info = format!("{:?}", button);
-            let mapped = keymouse_monitor::maps::button_to_string(button)
+            let mapped = keymouse_common::maps::button_to_string(button)
                 .map(|c| c.into_owned())
                 .unwrap_or_else(|| "(无映射)".to_string());
             let vk = if let rdev::Button::Unknown(code) = button {
