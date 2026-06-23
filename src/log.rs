@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tracing_appender::rolling;
 use tracing_subscriber::fmt;
@@ -29,17 +29,30 @@ fn parse_rotation(s: &str) -> rolling::Rotation {
     }
 }
 
+fn exe_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 pub fn init_logger(config: &LogConfig) {
-    if let Some(parent) = Path::new(&config.file).parent() {
+    let log_path = if Path::new(&config.file).is_relative() {
+        exe_dir().join(&config.file)
+    } else {
+        PathBuf::from(&config.file)
+    };
+
+    if let Some(parent) = log_path.parent() {
         let _ = fs::create_dir_all(parent);
     }
 
-    let log_dir = Path::new(&config.file)
+    let log_dir = log_path
         .parent()
         .unwrap_or(Path::new("."))
         .to_str()
         .unwrap_or(".");
-    let log_name = Path::new(&config.file)
+    let log_name = log_path
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("monitor.log");
