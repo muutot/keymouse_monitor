@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use rusqlite::Connection;
 
@@ -185,27 +186,37 @@ impl DatabaseBackend for SqliteBackend {
     }
 
     fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
-        let delete_sql = format!("DELETE FROM {} WHERE date = ?1", self.table_name);
-        self.conn
-            .execute(&delete_sql, [date_str])
-            .expect("Failed to delete existing day stats");
+        let t0 = Instant::now();
+        let key_count = data.len();
 
         if data.is_empty() {
+            // Delete any lingering rows for empty data
+            let delete_sql = format!("DELETE FROM {} WHERE date = ?1", self.table_name);
+            self.conn.execute(&delete_sql, [date_str]).expect("Failed to delete");
+            println!("[debug] upsert_day_stats({}): delete only (empty), total={:?}", date_str, t0.elapsed());
             return;
         }
 
-        let insert_sql = format!(
-            "INSERT INTO {} (date, key, count) VALUES (?1, ?2, ?3)",
+        let upsert_sql = format!(
+            "INSERT OR REPLACE INTO {} (date, key, count) VALUES (?1, ?2, ?3)",
             self.table_name
         );
         let mut stmt = self
             .conn
-            .prepare_cached(&insert_sql)
-            .expect("Failed to prepare INSERT");
+            .prepare_cached(&upsert_sql)
+            .expect("Failed to prepare upsert");
         for (key, count) in data {
             stmt.execute([date_str, key, &count.to_string()])
-                .expect("Failed to insert day stat");
+                .expect("Failed to upsert day stat");
         }
+        let elapsed = t0.elapsed();
+
+        println!(
+            "[debug] upsert_day_stats({}): upsert={:?} ({} keys)",
+            date_str,
+            elapsed,
+            key_count,
+        );
     }
 
     fn export_to_json(&self, format: &str) -> String {

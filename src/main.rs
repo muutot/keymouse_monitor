@@ -92,8 +92,16 @@ async fn main() {
             let data = Arc::clone(&data_for_timer);
             let db = Arc::clone(&db_for_timer);
             let _ = tokio::task::spawn_blocking(move || {
-                let mut guard = data.write();
-                guard.save_to_db(&db.lock().unwrap());
+                // Step 1: extract snapshot under data lock (fast, microseconds)
+                let snapshot = {
+                    let mut guard = data.write();
+                    guard.prepare_save()
+                };
+                // Step 2: save to DB without holding the data lock (slow, network)
+                if let Some((date, counts)) = snapshot {
+                    let db = db.lock().unwrap();
+                    db.upsert_day_stats(&date, &counts);
+                }
             }).await;
         }
     });
