@@ -188,6 +188,7 @@ async fn import_handler(
         )
     })?;
     let duration_ms = start.elapsed().as_millis();
+    println!("[api] Import successful (mode: {:?}, duration: {}ms).", mode, duration_ms);
     Ok(Json(serde_json::json!({ "status": "ok", "message": "Import successful", "mode": format!("{:?}", mode), "duration_ms": duration_ms })))
 }
 
