@@ -1,4 +1,4 @@
-# Key Monitor v1.3.1
+# Key Monitor v2.0.0
 
 Real-time keyboard and mouse click statistics with a visual UI. Backend records input events via Windows hooks or rdev, stores counts in SQLite or MongoDB, and serves a live-updating HTML frontend.
 
@@ -18,7 +18,7 @@ Open `http://localhost:5000` in a browser.
 
 ## Configuration
 
-Create a `config.json` in the project root (optional — all fields have defaults):
+Create a `config.json` next to the executable (optional — all fields have defaults):
 
 ```json
 {
@@ -29,16 +29,27 @@ Create a `config.json` in the project root (optional — all fields have default
       "table": "daily_stats"
     },
     "mongodb": {
+      "protocol": "mongodb",
       "database": "keymouse_monitor",
       "hosts": ["localhost:27017"],
       "ssl": true,
+      "replicaSet": "atlas-abc-shard-0",
+      "appName": "MyApp",
+      "username": "user",
+      "password": "pass",
       "collection": "daily_stats"
     },
     "use_server_aggregation": true
   },
   "port": 5000,
   "listener": "rawinput",
-  "save_interval_secs": 60
+  "save_interval_secs": 60,
+  "log": {
+    "level": "info",
+    "file": "logs/monitor.log",
+    "rotation": "daily",
+    "console": true
+  }
 }
 ```
 
@@ -66,13 +77,13 @@ Create a `config.json` in the project root (optional — all fields have default
 | `database` | string | `"keymouse_monitor"` | Database name |
 | `username` | string (nullable) | `null` | Auth username |
 | `password` | string (nullable) | `null` | Auth password |
-| `auth_source` | string | `"admin"` | Auth source database |
+| `authSource` | string | `"admin"` | Auth source database |
 | `ssl` | bool | `true` | Use TLS |
-| `replica_set` | string (nullable) | `null` | Replica set name |
-| `app_name` | string (nullable) | `null` | Application name |
+| `replicaSet` | string (nullable) | `null` | Replica set name |
+| `appName` | string (nullable) | `null` | Application name |
 | `hosts` | string array (nullable) | `null` | Host list, e.g. `["host:27017"]` |
-| `connect_timeout_ms` | number | `15000` | Connection timeout |
-| `server_selection_timeout_ms` | number | `30000` | Server selection timeout |
+| `connectTimeoutMs` | number | `15000` | Connection timeout |
+| `serverSelectionTimeoutMs` | number | `30000` | Server selection timeout |
 | `collection` | string | `"daily_stats"` | Collection name |
 
 ### Other top-level fields
@@ -82,6 +93,16 @@ Create a `config.json` in the project root (optional — all fields have default
 | `port` | number | `5000` | HTTP server port |
 | `listener` | string | `"rawinput"` (Windows)<br>`"rdev"` (other) | Input event backend |
 | `save_interval_secs` | number | `60` | Periodic DB save interval |
+| `log` | object | (see below) | Logging configuration |
+
+### `log` fields
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `level` | string | `"info"` | Log level (`trace`, `debug`, `info`, `warn`, `error`) |
+| `file` | string | `"logs/monitor.log"` | Log file path (relative to exe) |
+| `rotation` | string | `"daily"` | Log rotation: `"daily"`, `"hourly"`, `"never"` |
+| `console` | bool | `true` | Whether to also log to terminal when `--console` is passed |
 
 ### `listener` values
 
@@ -102,7 +123,7 @@ On non-Windows only `"rdev"` is available and selected automatically. Unknown va
 | `GET` | `/events` | SSE stream — pushes full count JSON on each key/button press |
 | `GET` | `/api/export` | Full database export as JSON |
 | `POST` | `/api/import?mode=overwrite\|merge` | Import JSON data from export format |
-| `GET` | `/api/version` | `{"version": "1.3.1", "name": "keymouse-monitor"}` |
+| `GET` | `/api/version` | `{"version": "2.0.0", "name": "keymouse-monitor"}` |
 
 ### SSE format (`/events`)
 
@@ -113,6 +134,8 @@ data: {"a": 42, "enter": 7, "mouse_left": 3, ...}\n\n
 Fires on every key/button/wheel event (only when at least one SSE client is connected).
 
 ### Export / Import JSON format
+
+Two output formats available via the UI export modal:
 
 ```json
 {
@@ -125,7 +148,20 @@ Fires on every key/button/wheel event (only when at least one SSE client is conn
 }
 ```
 
-Import modes: `"overwrite"` (replace existing records) or `"merge"` (add counts).
+Flat format (same structure, `records` is an array of `{date, key, count}` objects):
+
+```json
+{
+  "backend": "sqlite",
+  "exported_at": "2026-06-23T12:34:56",
+  "records": [
+    {"date": "2026-06-22", "key": "a", "count": 100},
+    {"date": "2026-06-22", "key": "enter", "count": 7}
+  ]
+}
+```
+
+Import accepts both formats. Import modes: `"overwrite"` (replace existing records) or `"merge"` (add counts).
 
 ### Examples
 
@@ -140,8 +176,8 @@ curl -X POST "http://localhost:5000/api/import?mode=merge" -d @backup.json -H "C
 
 - Counts saved to SQLite/MongoDB every `save_interval_secs` (default 60).
 - Graceful shutdown via `Ctrl+C`: saves remaining in-memory data before exit.
-- DB schema (SQLite): table `daily_stats` with columns `date` (TEXT PRIMARY KEY), `data` (TEXT — JSON blob).
-- MongoDB: collection `daily_stats` with documents `{date, data}`.
+- DB schema (SQLite): table `daily_stats` with columns `date` (TEXT), `key` (TEXT), `count` (INTEGER), primary key `(date, key)`.
+- MongoDB: collection `daily_stats` with documents `{date, key, count}`.
 
 ## Build Release
 
@@ -149,7 +185,7 @@ curl -X POST "http://localhost:5000/api/import?mode=merge" -d @backup.json -H "C
 cargo build --release
 ```
 
-Single binary at `target/release/keymouse-monitor` (`.exe` on Windows). No runtime dependencies.  
+Single binary at `target/release/keymouse-monitor` (`.exe` on Windows) with embedded icon. No runtime dependencies.  
 Statically linked C runtime (via `.cargo/config.toml`).
 
 CI (GitHub Actions) builds on push to `main` that modifies the `version` file; assets include binary + `index.html`.
@@ -162,9 +198,10 @@ CI (GitHub Actions) builds on push to `main` that modifies the `version` file; a
 │   ├── config.rs             # Config loading + all serde structs
 │   ├── api.rs                # Axum router, SSE, all endpoints
 │   ├── data.rs               # In-memory MonitorData, save logic
+│   ├── log.rs                # Tracing-based logging (tinfo/terror/twarn/...)
 │   ├── database/
 │   │   ├── mod.rs            # Database enum, DatabaseBackend trait, ImportMode
-│   │   ├── sqlite.rs         # SQLite backend (rusqlite, json_each)
+│   │   ├── sqlite.rs         # SQLite backend (rusqlite, flat schema)
 │   │   └── mongodb.rs       # MongoDB backend (dedicated tokio runtime)
 │   ├── maps.rs               # Key/Button → display string mapping
 │   └── listener/
@@ -178,9 +215,13 @@ CI (GitHub Actions) builds on push to `main` that modifies the `version` file; a
 │   ├── key_viewer/           # Live VK code inspector
 │   ├── mouse_bench/          # CPU benchmark of 3 mouse backends
 │   └── db_check/             # Database connectivity checker
-├── index.html                # 1270-line SPA frontend (dark theme, grid layout)
-├── static/                   # Static assets
+├── index.html                # SPA frontend (dark theme, grid layout)
+├── static/
+│   ├── svg/                  # SVG assets (logo)
+│   └── icon/                 # Auto-generated icon (app.ico, app.rc)
+├── build.rs                  # Auto-generates app.ico from SVG
+├── CHANGELOG.md              # Version history
 ├── config.json               # Optional config file
-├── version                   # Version string for CI (1.3.1)
+├── version                   # Version string for CI (2.0.0)
 └── Cargo.toml
 ```

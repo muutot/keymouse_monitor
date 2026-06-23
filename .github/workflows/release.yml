@@ -28,58 +28,16 @@ jobs:
       - name: Generate release notes
         shell: pwsh
         run: |
-          $repo = "${{ github.server_url }}/${{ github.repository }}"
-          $prev = git log --pretty=format:"%H" --skip=1 -n 1 version
-          if ($prev) {
-            $raw = git log $prev..HEAD --pretty=format:"%H|%s"
+          $ver = "${{ steps.version.outputs.version }}"
+          $content = Get-Content CHANGELOG.md -Raw
+          # Match ## [<version>] ... (everything up to next ## [ or EOF)
+          $pattern = "## \[$ver\].*?(?=\n## \[|\z)"
+          $match = [regex]::Match($content, $pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
+          if ($match.Success) {
+            $match.Value | Out-File -FilePath release_notes.md -Encoding UTF8
           } else {
-            $raw = git log --pretty=format:"%H|%s"
+            "No changelog entry for v$ver" | Out-File -FilePath release_notes.md -Encoding UTF8
           }
-
-          $groups = @{}
-          $lines = $raw -split "`r`n"
-          foreach ($line in $lines) {
-            if ([string]::IsNullOrWhiteSpace($line)) { continue }
-            $hash, $subject = $line -split '\|', 2
-            $short = $hash.Substring(0, 7)
-            $link = "$repo/commit/$hash"
-            if ($subject -match '^(\w+)(\([^)]+\))?!?:\s*(.*)') {
-              $type = $matches[1]
-              $desc = $matches[3]
-              $entry = "- $desc ([$short]($link))"
-            } else {
-              $type = "other"
-              $entry = "- $subject ([$short]($link))"
-            }
-            if (-not $groups.ContainsKey($type)) { $groups[$type] = @() }
-            $groups[$type] += $entry
-          }
-
-          $sectionNames = @{
-            "feat"     = "Features"
-            "fix"      = "Bug Fixes"
-            "perf"     = "Performance Improvements"
-            "refactor" = "Code Refactoring"
-            "chore"    = "Chores"
-            "docs"     = "Documentation"
-            "test"     = "Tests"
-            "style"    = "Style"
-            "revert"   = "Reverts"
-            "ci"       = "CI"
-            "build"    = "Build"
-            "other"    = "Other Changes"
-          }
-
-          $parts = @("## Changelog`n")
-          foreach ($type in $groups.Keys | Sort-Object) {
-            $display = $sectionNames[$type]
-            if (-not $display) { $display = "$type" }
-            $parts += "### $display`n"
-            $parts += ($groups[$type] -join "`n")
-            $parts += "`n"
-          }
-
-          $parts -join "`n" | Out-File -FilePath release_notes.md -Encoding UTF8
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
