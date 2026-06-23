@@ -67,20 +67,25 @@ impl MonitorData {
         let today_str = Local::now().format("%Y-%m-%d").to_string();
 
         if self.incremental_counts.is_empty() {
+            if self.today != today_str {
+                self.base_counts.clear();
+                self.today = today_str;
+            }
             return;
         }
 
-        // Merge incremental into base in-place (avoids cloning base_counts)
-        for (key, value) in self.incremental_counts.drain() {
-            *self.base_counts.entry(key).or_insert(0) += value;
-        }
-
-        db.upsert_day_stats(&today_str, &self.base_counts);
-
         if self.today != today_str {
+            // Day rolled over: save yesterday's accumulated data to yesterday
+            db.upsert_day_stats(&self.today, &self.base_counts);
             self.base_counts.clear();
             self.today = today_str;
         }
+
+        // Merge today's incremental into base and save
+        for (key, value) in self.incremental_counts.drain() {
+            *self.base_counts.entry(key).or_insert(0) += value;
+        }
+        db.upsert_day_stats(&self.today, &self.base_counts);
 
         println!(
             "Data merged and saved to database. Time: {}",
@@ -221,11 +226,15 @@ use crate::database::Database;
         data.save_to_db(&db);
 
         assert_eq!(data.today, today);
-        assert!(data.base_counts.is_empty(), "base cleared on day rollover");
         assert!(data.incremental_counts.is_empty());
+        // Today's incremental was merged into fresh base after rollover
+        assert_eq!(data.base_counts.get("new_day"), Some(&1), "new day's data in base");
+        assert!(data.base_counts.get("old").is_none(), "yesterday's data cleared on rollover");
 
         let saved = db.get_stats_for_day(&today);
         assert_eq!(saved.get("new_day"), Some(&1), "new data in today's db entry");
-        assert_eq!(saved.get("old"), Some(&99), "old base merged into today's db entry");
+        // Yesterday's final data was saved separately to yesterday's date
+        let old_saved = db.get_stats_for_day("2000-01-01");
+        assert_eq!(old_saved.get("old"), Some(&99), "old base saved to yesterday's date");
     }
 }
