@@ -141,7 +141,7 @@ pub fn button_to_string(button: &Button) -> Option<Cow<'static, str>> {
     }
 }
 
-fn vk_to_string(vk: u32) -> Option<&'static str> {
+pub fn vk_to_string(vk: u32) -> Option<&'static str> {
     match vk {
         48 => Some("0"),
         49 => Some("1"),

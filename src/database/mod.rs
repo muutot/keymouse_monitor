@@ -5,6 +5,8 @@ use crate::config::{DatabaseConfig, MongoConfig, SqliteConfig};
 mod mongodb;
 mod sqlite;
 
+pub use mongodb::{build_uri, redact_credentials, url_encode};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BackendType {
     Sqlite,

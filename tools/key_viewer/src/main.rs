@@ -1,9 +1,7 @@
-mod maps;
+use rdev::{listen, Event, EventType, Key};
 
 #[cfg(windows)]
 mod rawinput;
-
-use rdev::{listen, Event, EventType, Key};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -53,7 +51,9 @@ fn format_event(event: &Event) -> (String, String, String, String, String) {
                 "释放"
             };
             let key_info = format!("{:?}", key);
-            let mapped = maps::key_name(key).unwrap_or_else(|| "(无映射)".to_string());
+            let mapped = keymouse_monitor::maps::key_to_string(key)
+                .map(|c| c.into_owned())
+                .unwrap_or_else(|| "(无映射)".to_string());
             let vk = if let Key::Unknown(code) = key {
                 format!("{}", code)
             } else {
@@ -68,7 +68,9 @@ fn format_event(event: &Event) -> (String, String, String, String, String) {
                 "释放"
             };
             let key_info = format!("{:?}", button);
-            let mapped = maps::button_name(button);
+            let mapped = keymouse_monitor::maps::button_to_string(button)
+                .map(|c| c.into_owned())
+                .unwrap_or_else(|| "(无映射)".to_string());
             let vk = if let rdev::Button::Unknown(code) = button {
                 format!("{}", code)
             } else {

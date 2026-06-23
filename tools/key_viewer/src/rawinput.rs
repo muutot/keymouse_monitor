@@ -7,8 +7,6 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::maps;
-
 const BUF_SIZE: usize = 128;
 
 pub fn start() {
@@ -126,7 +124,7 @@ unsafe fn process_keyboard(kb: &RAWKEYBOARD) {
         "按下"
     };
     let vk = kb.VKey as u32;
-    let mapped = maps::vk_name(vk).unwrap_or("(无映射)");
+    let mapped = keymouse_monitor::maps::vk_to_string(vk).unwrap_or("(无映射)");
     let info = format!("VK={}", vk);
     let name = msg_name(kb.Message);
     println!(

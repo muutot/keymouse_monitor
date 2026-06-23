@@ -1,11 +1,20 @@
 use std::collections::HashMap;
 use std::convert::Infallible;
-use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
+};
 use std::time::Instant;
 
 use axum::{
-    Router, extract::{Query, State}, http::StatusCode,
-    response::{Json, sse::{Event, Sse}}, routing::{get, post},
+    extract::{Query, State},
+    http::StatusCode,
+    response::{
+        sse::{Event, Sse},
+        Json,
+    },
+    routing::{get, post},
+    Router,
 };
 use chrono::{Local, NaiveDate};
 use futures::stream::Stream;
@@ -16,7 +25,11 @@ use tokio::sync::watch;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
-use crate::{tinfo, data::MonitorData, database::{Database, ImportMode}};
+use crate::{
+    data::MonitorData,
+    database::{Database, ImportMode},
+    tinfo,
+};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -78,20 +91,18 @@ async fn get_history(
     State(state): State<AppState>,
     Query(params): Query<HistoryParams>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
-    NaiveDate::parse_from_str(&params.start, "%Y-%m-%d")
-        .map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": "Invalid date format, please use YYYY-MM-DD."})),
-            )
-        })?;
-    NaiveDate::parse_from_str(&params.end, "%Y-%m-%d")
-        .map_err(|_| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(json!({"error": "Invalid date format, please use YYYY-MM-DD."})),
-            )
-        })?;
+    NaiveDate::parse_from_str(&params.start, "%Y-%m-%d").map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid date format, please use YYYY-MM-DD."})),
+        )
+    })?;
+    NaiveDate::parse_from_str(&params.end, "%Y-%m-%d").map_err(|_| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid date format, please use YYYY-MM-DD."})),
+        )
+    })?;
 
     let db = state.db.clone();
     let start = params.start.clone();
@@ -172,7 +183,7 @@ async fn import_handler(
     tokio::task::spawn_blocking(move || {
         let today_counts: HashMap<String, u64> = serde_json::from_str(&json_str)
             .ok()
-            .and_then(|v: serde_json::Value| {
+            .and_then(|v: Value| {
                 v.get("records")
                     .and_then(|r| r.as_object())
                     .and_then(|records| records.get(&today).cloned())
@@ -195,8 +206,15 @@ async fn import_handler(
         )
     })?;
     let duration_ms = start.elapsed().as_millis();
-    tinfo!("api", "Import successful (mode: {:?}, duration: {}ms).", mode, duration_ms);
-    Ok(Json(serde_json::json!({ "status": "ok", "message": "Import successful", "mode": format!("{:?}", mode), "duration_ms": duration_ms })))
+    tinfo!(
+        "api",
+        "Import successful (mode: {:?}, duration: {}ms).",
+        mode,
+        duration_ms
+    );
+    Ok(Json(
+        json!({ "status": "ok", "message": "Import successful", "mode": format!("{:?}", mode), "duration_ms": duration_ms }),
+    ))
 }
 
 async fn version_handler() -> Json<Value> {
