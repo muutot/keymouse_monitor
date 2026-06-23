@@ -50,7 +50,7 @@ unsafe fn send_mouse_event() {
     };
     SendInput(1, &input, mem::size_of::<INPUT>() as i32);
     let hwnd = STIM_HWND as HWND;
-    if hwnd != 0 {
+    if !hwnd.is_null() {
         PostMessageA(hwnd, WM_MOUSEMOVE, 0, 0);
     }
 }
@@ -61,14 +61,14 @@ fn msg_loop(
     unsafe {
         // Drain stale WM_QUIT from previous benc h runs
         let mut msg = mem::zeroed();
-        while PeekMessageA(&mut msg, 0 as HWND, WM_QUIT, WM_QUIT, PM_REMOVE) != 0 {}
+        while PeekMessageA(&mut msg, null_mut(), WM_QUIT, WM_QUIT, PM_REMOVE) != 0 {}
 
         let wall_start = Instant::now();
         let cpu_start = thread_cpu_time();
         let stim_interval = Duration::from_nanos(1_000_000_000 / STIM_HZ.load(Ordering::Relaxed).max(1) as u64);
         let mut last_stim = Instant::now();
         loop {
-            while PeekMessageA(&mut msg, 0 as HWND, 0, 0, PM_REMOVE) != 0 {
+            while PeekMessageA(&mut msg, null_mut(), 0, 0, PM_REMOVE) != 0 {
                 if msg.message == WM_QUIT {
                     return thread_cpu_time().checked_sub(cpu_start).unwrap_or(Duration::ZERO);
                 }
@@ -97,10 +97,10 @@ fn msg_loop_par(
 ) -> Duration {
     unsafe {
         let mut msg = mem::zeroed();
-        while PeekMessageA(&mut msg, 0 as HWND, WM_QUIT, WM_QUIT, PM_REMOVE) != 0 {}
+        while PeekMessageA(&mut msg, null_mut(), WM_QUIT, WM_QUIT, PM_REMOVE) != 0 {}
         let cpu_start = thread_cpu_time();
         loop {
-            while PeekMessageA(&mut msg, 0 as HWND, 0, 0, PM_REMOVE) != 0 {
+            while PeekMessageA(&mut msg, null_mut(), 0, 0, PM_REMOVE) != 0 {
                 if msg.message == WM_QUIT {
                     return thread_cpu_time().checked_sub(cpu_start).unwrap_or(Duration::ZERO);
                 }
@@ -117,21 +117,21 @@ fn msg_loop_par(
 
 // ── Approach 1: WH_MOUSE_LL hook ──────────────────────────────────────────
 
-static mut BENCH_HOOK: isize = 0;
+static mut BENCH_HOOK: HHOOK = null_mut();
 
 unsafe extern "system" fn hook_cb(_code: i32, wparam: WPARAM, _lparam: LPARAM) -> LRESULT {
     if _code >= 0 && wparam as u32 == WM_MOUSEMOVE {
-        return CallNextHookEx(0, _code, wparam, _lparam);
+        return CallNextHookEx(null_mut(), _code, wparam, _lparam);
     }
-    CallNextHookEx(0, _code, wparam, _lparam)
+    CallNextHookEx(null_mut(), _code, wparam, _lparam)
 }
 
 unsafe fn process_noop(_msg: &MSG) {}
 
 fn bench_wh_mouse_ll() -> Duration {
     unsafe {
-        BENCH_HOOK = SetWindowsHookExA(WH_MOUSE_LL, Some(hook_cb), 0, 0);
-        if BENCH_HOOK == 0 {
+        BENCH_HOOK = SetWindowsHookExA(WH_MOUSE_LL, Some(hook_cb), null_mut(), 0);
+        if BENCH_HOOK.is_null() {
             eprintln!("  FAILED to set WH_MOUSE_LL hook");
             return Duration::ZERO;
         }
@@ -194,14 +194,14 @@ fn bench_rawinput_wndproc() -> Duration {
             style: 0,
             lpfnWndProc: Some(wnd_proc),
             cbClsExtra: 0, cbWndExtra: 0,
-            hInstance: hinst, hIcon: 0, hCursor: 0, hbrBackground: 0,
+            hInstance: hinst, hIcon: null_mut(), hCursor: null_mut(), hbrBackground: null_mut(),
             lpszMenuName: null_mut(),
             lpszClassName: b"BenchWndProc\0".as_ptr() as _,
         };
         if RegisterClassA(&wc) == 0 { eprintln!("  FAILED register class"); return Duration::ZERO; }
 
-        let hwnd = CreateWindowExA(0, b"BenchWndProc\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, 0, hinst, null_mut());
-        if hwnd == 0 { eprintln!("  FAILED create window"); return Duration::ZERO; }
+        let hwnd = CreateWindowExA(0, b"BenchWndProc\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, null_mut(), hinst, null_mut());
+        if hwnd.is_null() { eprintln!("  FAILED create window"); return Duration::ZERO; }
 
         if !register_raw_input(hwnd) { eprintln!("  FAILED register raw input"); return Duration::ZERO; }
 
@@ -242,14 +242,14 @@ fn bench_rawinput_direct() -> Duration {
             style: 0,
             lpfnWndProc: Some(DefWindowProcA),
             cbClsExtra: 0, cbWndExtra: 0,
-            hInstance: hinst, hIcon: 0, hCursor: 0, hbrBackground: 0,
+            hInstance: hinst, hIcon: null_mut(), hCursor: null_mut(), hbrBackground: null_mut(),
             lpszMenuName: null_mut(),
             lpszClassName: b"BenchDirect\0".as_ptr() as _,
         };
         if RegisterClassA(&wc) == 0 { eprintln!("  FAILED register class"); return Duration::ZERO; }
 
-        let hwnd = CreateWindowExA(0, b"BenchDirect\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, 0, hinst, null_mut());
-        if hwnd == 0 { eprintln!("  FAILED create window"); return Duration::ZERO; }
+        let hwnd = CreateWindowExA(0, b"BenchDirect\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, null_mut(), hinst, null_mut());
+        if hwnd.is_null() { eprintln!("  FAILED create window"); return Duration::ZERO; }
 
         if !register_raw_input(hwnd) { eprintln!("  FAILED register raw input"); return Duration::ZERO; }
 
@@ -347,8 +347,8 @@ unsafe fn send_mouse_event_parallel() {
 }
 
 unsafe fn parallel_wh_mouse_ll(stop: &AtomicBool) -> Duration {
-    BENCH_HOOK = SetWindowsHookExA(WH_MOUSE_LL, Some(hook_cb), 0, 0);
-    if BENCH_HOOK == 0 {
+    BENCH_HOOK = SetWindowsHookExA(WH_MOUSE_LL, Some(hook_cb), null_mut(), 0);
+    if BENCH_HOOK.is_null() {
         let _ = writeln!(std::io::stdout(), "  WH_MOUSE_LL: SetWindowsHookExA err=0x{:x}", GetLastError());
         return Duration::ZERO;
     }
@@ -363,7 +363,7 @@ unsafe fn parallel_rawinput_wndproc(stop: &AtomicBool) -> Duration {
         style: 0,
         lpfnWndProc: Some(wnd_proc),
         cbClsExtra: 0, cbWndExtra: 0,
-        hInstance: hinst, hIcon: 0, hCursor: 0, hbrBackground: 0,
+        hInstance: hinst, hIcon: null_mut(), hCursor: null_mut(), hbrBackground: null_mut(),
         lpszMenuName: null_mut(),
         lpszClassName: b"ParWndProc\0".as_ptr() as _,
     };
@@ -371,8 +371,8 @@ unsafe fn parallel_rawinput_wndproc(stop: &AtomicBool) -> Duration {
         let _ = writeln!(std::io::stdout(), "  ParWndProc: RegisterClassA err=0x{:x}", GetLastError());
         return Duration::ZERO;
     }
-    let hwnd = CreateWindowExA(0, b"ParWndProc\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, 0, hinst, null_mut());
-    if hwnd == 0 {
+    let hwnd = CreateWindowExA(0, b"ParWndProc\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, null_mut(), hinst, null_mut());
+    if hwnd.is_null() {
         let _ = writeln!(std::io::stdout(), "  ParWndProc: CreateWindowExA err=0x{:x}", GetLastError());
         return Duration::ZERO;
     }
@@ -394,7 +394,7 @@ unsafe fn parallel_rawinput_direct(stop: &AtomicBool) -> Duration {
         style: 0,
         lpfnWndProc: Some(DefWindowProcA),
         cbClsExtra: 0, cbWndExtra: 0,
-        hInstance: hinst, hIcon: 0, hCursor: 0, hbrBackground: 0,
+        hInstance: hinst, hIcon: null_mut(), hCursor: null_mut(), hbrBackground: null_mut(),
         lpszMenuName: null_mut(),
         lpszClassName: b"ParDirect\0".as_ptr() as _,
     };
@@ -402,8 +402,8 @@ unsafe fn parallel_rawinput_direct(stop: &AtomicBool) -> Duration {
         let _ = writeln!(std::io::stdout(), "  ParDirect: RegisterClassA err=0x{:x}", GetLastError());
         return Duration::ZERO;
     }
-    let hwnd = CreateWindowExA(0, b"ParDirect\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, 0, hinst, null_mut());
-    if hwnd == 0 {
+    let hwnd = CreateWindowExA(0, b"ParDirect\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, null_mut(), hinst, null_mut());
+    if hwnd.is_null() {
         let _ = writeln!(std::io::stdout(), "  ParDirect: CreateWindowExA err=0x{:x}", GetLastError());
         return Duration::ZERO;
     }

@@ -198,8 +198,6 @@ fn extract_hostport(uri: &str) -> Option<String> {
 
 fn check_mongodb(cfg: &MongoConfig) -> bool {
     let raw_uri = build_uri(cfg);
-    // Add a connect timeout so the tool doesn't hang forever.
-    let timeout_ms = 5000;
     let uri = if raw_uri.contains('?') {
         format!("{}", raw_uri)
     } else {
@@ -250,7 +248,7 @@ fn check_mongodb(cfg: &MongoConfig) -> bool {
 
     // ── Ping ───────────────────────────────────────────────────
     let db = client.database(&cfg.database);
-    match db.run_command(mongodb::bson::doc! { "ping": 1 }, None) {
+    match db.run_command(mongodb::bson::doc! { "ping": 1 }).run() {
         Ok(_) => {
             let dur = start.elapsed();
             println!("  ping:   \x1b[32m✓ success\x1b[0m  ({:.1}ms)", dur.as_secs_f64() * 1000.0);

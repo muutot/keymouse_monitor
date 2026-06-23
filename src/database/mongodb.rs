@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Document};
-use mongodb::options::{AggregateOptions, FindOptions};
+
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
@@ -142,7 +142,7 @@ impl MongoBackend {
         println!("[mongodb] Connecting to MongoDB...");
         let db = self.client.database(&self.db_name);
         let ping_result: Result<mongodb::bson::Document, String> = self.rt.block_on(async {
-            db.run_command(doc! { "ping": 1 }, None)
+            db.run_command(doc! { "ping": 1 })
                 .await
                 .map_err(|e| format!("{e}"))
         });
@@ -155,7 +155,7 @@ impl MongoBackend {
                     .build();
                 let _ = self
                     .rt
-                    .block_on(async { collection.create_index(index, None).await });
+                    .block_on(async { collection.create_index(index).await });
                 self.migrate_old_format();
                 println!("[mongodb] Database initialization complete.");
                 Ok(())
@@ -167,7 +167,7 @@ impl MongoBackend {
     fn migrate_old_format(&self) {
         let raw = self.raw_collection();
         let has_old = self.rt.block_on(async {
-            raw.find_one(doc! { "data": { "$exists": true } }, None)
+            raw.find_one(doc! { "data": { "$exists": true } })
                 .await
                 .ok()
                 .flatten()
@@ -180,7 +180,7 @@ impl MongoBackend {
         println!("[mongodb] Migrating old nested format to flat format...");
         self.rt.block_on(async {
             let mut cursor = raw
-                .find(doc! { "data": { "$exists": true } }, None)
+                .find(doc! { "data": { "$exists": true } })
                 .await
                 .expect("Failed to query old format docs");
 
@@ -205,10 +205,10 @@ impl MongoBackend {
             }
 
             if !flat_docs.is_empty() {
-                raw.insert_many(flat_docs, None)
+                raw.insert_many(flat_docs)
                     .await
                     .expect("Failed to insert migrated flat docs");
-                raw.delete_many(doc! { "data": { "$exists": true } }, None)
+                raw.delete_many(doc! { "data": { "$exists": true } })
                     .await
                     .expect("Failed to delete old format docs");
                 println!("[mongodb] Migration complete.");
@@ -235,7 +235,7 @@ impl DatabaseBackend for MongoBackend {
         let filter = doc! { "date": date_str };
         self.rt.block_on(async {
             let mut cursor = collection
-                .find(filter, None)
+                .find(filter)
                 .await
                 .expect("Failed to query day stats");
             let mut result = HashMap::new();
@@ -255,7 +255,7 @@ impl DatabaseBackend for MongoBackend {
         self.rt.block_on(async {
             let t0 = Instant::now();
             let mut cursor = raw
-                .aggregate(pipeline, AggregateOptions::builder().build())
+                .aggregate(pipeline)
                 .await
                 .expect("Failed to aggregate range");
             let t1 = Instant::now();
@@ -305,7 +305,7 @@ impl DatabaseBackend for MongoBackend {
         let key_count = data.len();
         let is_empty = data.is_empty();
         self.rt.block_on(async {
-            raw.delete_many(doc! { "date": date_str }, None)
+            raw.delete_many(doc! { "date": date_str })
                 .await
                 .expect("Failed to delete existing day stats");
             let t1 = Instant::now();
@@ -329,7 +329,7 @@ impl DatabaseBackend for MongoBackend {
                 })
                 .collect();
 
-            raw.insert_many(docs, None)
+            raw.insert_many(docs)
                 .await
                 .expect("Failed to insert day stats");
             let t2 = Instant::now();
@@ -347,12 +347,10 @@ impl DatabaseBackend for MongoBackend {
 
     fn export_to_json(&self, format: &str) -> String {
         let raw = self.raw_collection();
-        let opts = FindOptions::builder()
-            .sort(doc! { "date": 1, "key": 1 })
-            .build();
         self.rt.block_on(async {
             let mut cursor = raw
-                .find(doc! {}, opts)
+                .find(doc! {})
+                .sort(doc! { "date": 1, "key": 1 })
                 .await
                 .expect("Failed to query export data");
 
@@ -462,7 +460,7 @@ impl DatabaseBackend for MongoBackend {
 
         self.rt.block_on(async {
             if mode == ImportMode::Overwrite {
-                raw.delete_many(doc! { "date": { "$in": &dates } }, None)
+                raw.delete_many(doc! { "date": { "$in": &dates } })
                     .await
                     .expect("Failed to delete existing records");
 
@@ -480,7 +478,7 @@ impl DatabaseBackend for MongoBackend {
                     .collect();
 
                 if !docs.is_empty() {
-                    raw.insert_many(docs, None)
+                    raw.insert_many(docs)
                         .await
                         .expect("Failed to insert records");
                 }
@@ -490,7 +488,7 @@ impl DatabaseBackend for MongoBackend {
                 let mut existing_map: HashMap<String, HashMap<String, u64>> = HashMap::new();
                 {
                     let mut cursor = raw
-                        .find(filter, None)
+                        .find(filter)
                         .await
                         .expect("Failed to query existing records for merge");
                     while let Some(d) = cursor.try_next().await.unwrap_or(None) {
@@ -504,7 +502,7 @@ impl DatabaseBackend for MongoBackend {
                     }
                 }
 
-                raw.delete_many(doc! { "date": { "$in": &dates } }, None)
+                raw.delete_many(doc! { "date": { "$in": &dates } })
                     .await
                     .expect("Failed to delete existing records for merge");
 
@@ -526,7 +524,7 @@ impl DatabaseBackend for MongoBackend {
                     .collect();
 
                 if !docs.is_empty() {
-                    raw.insert_many(docs, None)
+                    raw.insert_many(docs)
                         .await
                         .expect("Failed to insert merged records");
                 }

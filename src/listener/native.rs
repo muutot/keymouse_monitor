@@ -16,8 +16,8 @@ extern "system" {
     fn GetMessageA(msg: *mut MSG, hwnd: *mut std::ffi::c_void, msgfiltermin: u32, msgfiltermax: u32) -> i32;
 }
 
-static mut KEYBOARD_HOOK: HHOOK = 0;
-static mut MOUSE_HOOK: HHOOK = 0;
+static mut KEYBOARD_HOOK: HHOOK = null_mut();
+static mut MOUSE_HOOK: HHOOK = null_mut();
 
 static mut CB: Option<common::CallbackData> = None;
 
@@ -26,14 +26,14 @@ unsafe extern "system" fn hook_callback(code: i32, wparam: WPARAM, lparam: LPARA
         let event_type = msg_to_event(wparam, lparam);
         if let Some(et) = event_type {
             if matches!(et, EventType::MouseMove { .. }) {
-                return CallNextHookEx(0, code, wparam, lparam);
+                return CallNextHookEx(null_mut(), code, wparam, lparam);
             }
             if let Some(ref cb) = CB {
                 common::process_event(&et, cb);
             }
         }
     }
-    CallNextHookEx(0, code, wparam, lparam)
+    CallNextHookEx(null_mut(), code, wparam, lparam)
 }
 
 unsafe fn msg_to_event(wparam: WPARAM, lparam: LPARAM) -> Option<EventType> {
@@ -88,14 +88,14 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
         unsafe {
             CB = Some(common::CallbackData { data, change_tx, client_count });
 
-            KEYBOARD_HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_callback), 0, 0);
-            if KEYBOARD_HOOK == 0 {
+            KEYBOARD_HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_callback), null_mut(), 0);
+            if KEYBOARD_HOOK.is_null() {
                 eprintln!("Failed to set keyboard hook");
                 return;
             }
 
-            MOUSE_HOOK = SetWindowsHookExA(WH_MOUSE_LL, Some(hook_callback), 0, 0);
-            if MOUSE_HOOK == 0 {
+            MOUSE_HOOK = SetWindowsHookExA(WH_MOUSE_LL, Some(hook_callback), null_mut(), 0);
+            if MOUSE_HOOK.is_null() {
                 eprintln!("Failed to set mouse hook");
                 return;
             }
