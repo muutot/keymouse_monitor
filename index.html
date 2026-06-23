@@ -1157,6 +1157,7 @@
     stopLiveUpdates(); // Close any existing EventSource
     clearUI(); // Clear any previous history data from the board
     updateTopN({}); // 预先填入占位元素，保持高度一致
+    lastLiveData = {}; // 清空缓存，确保首次SSE事件能触发完整UI刷新
     statusDisplay.textContent = '当前模式: 实时数据 (长连接)';
 
     eventSource = new EventSource(`${API_URL}/events`);
