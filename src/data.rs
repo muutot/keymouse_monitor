@@ -70,17 +70,18 @@ impl MonitorData {
             return;
         }
 
-        let total_counts = self.get_key_counts();
-        db.upsert_day_stats(&today_str, &total_counts);
+        // Merge incremental into base in-place (avoids cloning base_counts)
+        for (key, value) in self.incremental_counts.drain() {
+            *self.base_counts.entry(key).or_insert(0) += value;
+        }
+
+        db.upsert_day_stats(&today_str, &self.base_counts);
 
         if self.today != today_str {
             self.base_counts.clear();
             self.today = today_str;
-        } else {
-            self.base_counts = total_counts;
         }
 
-        self.incremental_counts.clear();
         println!(
             "Data merged and saved to database. Time: {}",
             Local::now().format("%Y-%m-%d %H:%M:%S")
@@ -95,11 +96,16 @@ mod tests {
 use crate::database::Database;
 
     fn make_empty() -> MonitorData {
+        let today = Local::now().format("%Y-%m-%d").to_string();
         MonitorData {
             base_counts: HashMap::new(),
             incremental_counts: HashMap::new(),
-            today: "2026-06-22".to_string(),
+            today,
         }
+    }
+
+    fn make_today() -> String {
+        Local::now().format("%Y-%m-%d").to_string()
     }
 
     fn make_db() -> Database {
@@ -174,6 +180,7 @@ use crate::database::Database;
     fn test_save_to_db_merges_and_clears_incremental() {
         let db = make_db();
         let mut data = make_empty();
+        let today = make_today();
         data.base_counts.insert("a".to_string(), 10);
         data.increase_count("a");
         data.increase_count("b");
@@ -184,7 +191,7 @@ use crate::database::Database;
         assert_eq!(data.base_counts.get("a"), Some(&11));
         assert_eq!(data.base_counts.get("b"), Some(&1));
 
-        let saved = db.get_stats_for_day("2026-06-22");
+        let saved = db.get_stats_for_day(&today);
         assert_eq!(saved.get("a"), Some(&11));
         assert_eq!(saved.get("b"), Some(&1));
     }
@@ -206,17 +213,18 @@ use crate::database::Database;
     fn test_save_to_db_day_rollover_clears_base() {
         let db = make_db();
         let mut data = make_empty();
+        let today = make_today();
         data.base_counts.insert("old".to_string(), 99);
-        data.today = "2026-06-21".to_string();
+        data.today = "2000-01-01".to_string();
         data.increase_count("new_day");
 
         data.save_to_db(&db);
 
-        assert_eq!(data.today, "2026-06-22");
+        assert_eq!(data.today, today);
         assert!(data.base_counts.is_empty(), "base cleared on day rollover");
         assert!(data.incremental_counts.is_empty());
 
-        let saved = db.get_stats_for_day("2026-06-22");
+        let saved = db.get_stats_for_day(&today);
         assert_eq!(saved.get("new_day"), Some(&1), "new data in today's db entry");
         assert_eq!(saved.get("old"), Some(&99), "old base merged into today's db entry");
     }

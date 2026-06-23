@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use futures::TryStreamExt;
 use mongodb::bson::doc;
-use mongodb::options::{AggregateOptions, FindOptions, UpdateOptions};
+use mongodb::options::{FindOptions, UpdateOptions};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
@@ -23,7 +23,6 @@ pub struct MongoBackend {
     client: mongodb::Client,
     db_name: String,
     collection_name: String,
-    use_server_aggregation: bool,
 }
 
 fn redact_credentials(uri: &str) -> String {
@@ -124,7 +123,7 @@ fn url_encode(s: &str) -> String {
 
 impl MongoBackend {
     /// MUST be called from a **non‑tokio** thread (e.g. spawn_blocking).
-    pub fn new(cfg: &MongoConfig, use_server_aggregation: bool) -> Self {
+    pub fn new(cfg: &MongoConfig, _use_server_aggregation: bool) -> Self {
         let uri = build_uri(cfg);
         println!("[mongodb] URI: {}", redact_credentials(&uri));
 
@@ -138,7 +137,7 @@ impl MongoBackend {
 
         let db_name = cfg.database.clone();
         let collection_name = cfg.collection.clone();
-        let backend = Self { rt, client, db_name, collection_name, use_server_aggregation };
+        let backend = Self { rt, client, db_name, collection_name };
         if let Err(e) = backend.init_db() {
             eprintln!("\n\x1b[31m⚠ MongoDB connection failed:\x1b[0m");
             eprintln!("  {e}");
@@ -206,40 +205,17 @@ impl DatabaseBackend for MongoBackend {
             "date": { "$gte": start_date, "$lte": end_date }
         };
         self.rt.block_on(async {
-            if self.use_server_aggregation {
-                let pipeline = vec![
-                    doc! { "$match": { "date": { "$gte": start_date, "$lte": end_date } } },
-                    doc! { "$project": { "kv": { "$objectToArray": "$data" } } },
-                    doc! { "$unwind": "$kv" },
-                    doc! { "$group": { "_id": "$kv.k", "total": { "$sum": "$kv.v" } } },
-                ];
-                let mut cursor = collection
-                    .aggregate(pipeline, AggregateOptions::builder().build())
-                    .await
-                    .expect("Failed to aggregate range");
-                let mut aggregated = HashMap::new();
-                while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
-                    if let (Some(key), Some(value)) = (
-                        doc.get_str("_id").ok(),
-                        doc.get_i64("total").ok().map(|v| v as u64),
-                    ) {
-                        aggregated.insert(key.to_string(), value);
-                    }
+            let mut cursor = collection
+                .find(filter, None)
+                .await
+                .expect("Failed to query range");
+            let mut aggregated = HashMap::new();
+            while let Some(stat) = cursor.try_next().await.unwrap_or(None) {
+                for (key, value) in stat.data {
+                    *aggregated.entry(key).or_insert(0) += value;
                 }
-                aggregated
-            } else {
-                let mut cursor = collection
-                    .find(filter, None)
-                    .await
-                    .expect("Failed to query range");
-                let mut aggregated = HashMap::new();
-                while let Some(stat) = cursor.try_next().await.unwrap_or(None) {
-                    for (key, value) in stat.data {
-                        *aggregated.entry(key).or_insert(0) += value;
-                    }
-                }
-                aggregated
             }
+            aggregated
         })
     }
 
