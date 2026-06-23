@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicUsize;
 use parking_lot::RwLock;
 use rdev::{Button, EventType};
 use tokio::sync::watch;
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
@@ -15,7 +15,7 @@ use crate::listener::{common, keyboard};
 
 const RAW_BUF_SIZE: usize = 64;
 
-static mut KEYBOARD_HOOK: HHOOK = 0;
+static mut KEYBOARD_HOOK: HHOOK = null_mut();
 
 static mut CB: Option<common::CallbackData> = None;
 
@@ -42,7 +42,7 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
             }
         }
     }
-    CallNextHookEx(0, code, wparam, lparam)
+    CallNextHookEx(null_mut(), code, wparam, lparam)
 }
 
 unsafe fn process_raw_input(lparam: LPARAM) {
@@ -127,9 +127,9 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 cbClsExtra: 0,
                 cbWndExtra: 0,
                 hInstance: hinst,
-                hIcon: 0,
-                hCursor: 0,
-                hbrBackground: 0,
+                hIcon: null_mut(),
+                hCursor: null_mut(),
+                hbrBackground: null_mut(),
                 lpszMenuName: null_mut(),
                 lpszClassName: class_name.as_ptr() as _,
             };
@@ -145,11 +145,11 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 0,
                 0, 0, 0, 0,
                 HWND_MESSAGE,
-                0,
+                null_mut(),
                 hinst,
                 null_mut(),
             );
-            if hwnd == 0 {
+            if hwnd.is_null() {
                 eprintln!("Failed to create message-only window");
                 return;
             }
@@ -165,14 +165,14 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 return;
             }
 
-            KEYBOARD_HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(keyboard_hook), 0, 0);
-            if KEYBOARD_HOOK == 0 {
+            KEYBOARD_HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(keyboard_hook), null_mut(), 0);
+            if KEYBOARD_HOOK.is_null() {
                 eprintln!("Failed to set keyboard hook");
                 return;
             }
 
             let mut msg = std::mem::zeroed();
-            while GetMessageA(&mut msg, 0 as HWND, 0, 0) != 0 {
+            while GetMessageA(&mut msg, null_mut(), 0, 0) != 0 {
                 if msg.message == WM_INPUT {
                     process_raw_input(msg.lParam);
                 } else {
