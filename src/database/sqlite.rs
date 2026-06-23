@@ -215,6 +215,38 @@ impl DatabaseBackend for SqliteBackend {
         );
     }
 
+    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
+        let t0 = Instant::now();
+        let key_count = data.len();
+
+        if data.is_empty() {
+            tdebug!("sqlite", "merge_incremental_stats({}): empty, nothing to do", date_str);
+            return;
+        }
+
+        let upsert_sql = format!(
+            "INSERT INTO {} (date, key, count) VALUES (?1, ?2, ?3) \
+             ON CONFLICT(date, key) DO UPDATE SET count = count + excluded.count",
+            self.table_name
+        );
+        let mut stmt = self
+            .conn
+            .prepare_cached(&upsert_sql)
+            .expect("Failed to prepare incremental upsert");
+        for (key, count) in data {
+            stmt.execute([date_str, key, &count.to_string()])
+                .expect("Failed to merge incremental stat");
+        }
+        let elapsed = t0.elapsed();
+
+        tdebug!("sqlite",
+            "merge_incremental_stats({}): upsert={:?} ({} keys)",
+            date_str,
+            elapsed,
+            key_count,
+        );
+    }
+
     fn export_to_json(&self, format: &str) -> String {
         let sql = format!(
             "SELECT date, key, count FROM {} ORDER BY date, key",

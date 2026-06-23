@@ -14,7 +14,7 @@ mod listener;
 mod log;
 
 use api::AppState;
-use config::Config;
+use config::{Config, UpdateMode};
 use data::MonitorData;
 use database::Database;
 
@@ -98,6 +98,12 @@ async fn main() {
     let (change_tx, _) = watch::channel(());
     listener::start(&config.listener, Arc::clone(&data), change_tx.clone(), Arc::clone(&client_count));
 
+    let save_interval = config.save_interval_secs;
+    let data_for_timer = Arc::clone(&data);
+    let db_for_timer = Arc::clone(&db);
+    let update_mode_timer = config.update_mode.clone();
+    let update_mode_shutdown = config.update_mode.clone();
+
     let state = AppState {
         data: Arc::clone(&data),
         db: Arc::clone(&db),
@@ -108,10 +114,6 @@ async fn main() {
     // Cooperative shutdown: signal the timer to stop, then wait for it
     // to finish its current save before acquiring locks ourselves.
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
-
-    let save_interval = config.save_interval_secs;
-    let data_for_timer = Arc::clone(&data);
-    let db_for_timer = Arc::clone(&db);
     let timer_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(save_interval));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -123,16 +125,22 @@ async fn main() {
             }
             let data = Arc::clone(&data_for_timer);
             let db = Arc::clone(&db_for_timer);
+            let mode = update_mode_timer.clone();
             let _ = tokio::task::spawn_blocking(move || {
-                // Step 1: extract snapshot under data lock (fast, microseconds)
                 let snapshot = {
                     let mut guard = data.write();
                     guard.prepare_save()
                 };
-                // Step 2: save to DB without holding the data lock (slow, network)
-                if let Some((date, counts)) = snapshot {
+                if let Some(result) = snapshot {
                     let db = db.lock().unwrap();
-                    db.upsert_day_stats(&date, &counts);
+                    if result.is_rollover {
+                        db.upsert_day_stats(&result.date, &result.snapshot);
+                    } else {
+                        match mode {
+                            UpdateMode::Diff => db.merge_incremental_stats(&result.date, &result.delta),
+                            UpdateMode::Full => db.upsert_day_stats(&result.date, &result.snapshot),
+                        }
+                    }
                 }
             }).await;
         }
@@ -164,9 +172,10 @@ async fn main() {
     // Must use spawn_blocking for MongoDB driver (it calls rt.block_on internally)
     let data_clone = Arc::clone(&data);
     let db_clone = Arc::clone(&db);
+    let mode_shutdown = update_mode_shutdown;
     tokio::task::spawn_blocking(move || {
         let mut guard = data_clone.write();
-        guard.save_to_db(&db_clone.lock().unwrap());
+        guard.save_to_db(&db_clone.lock().unwrap(), &mode_shutdown);
     })
     .await
     .unwrap();

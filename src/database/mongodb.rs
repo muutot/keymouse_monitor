@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Document};
-use mongodb::options::{DeleteManyModel, InsertOneModel, WriteModel};
+use mongodb::options::{DeleteManyModel, InsertOneModel, UpdateOneModel, WriteModel};
 
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
@@ -260,6 +260,47 @@ impl DatabaseBackend for MongoBackend {
                 t1 - t0,
                 key_count,
                 if is_empty { ", empty" } else { "" },
+            );
+        });
+    }
+
+    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
+        let raw = self.raw_collection();
+        let ns = raw.namespace();
+        let client = &self.client;
+        let t0 = Instant::now();
+        let key_count = data.len();
+
+        if data.is_empty() {
+            tdebug!("mongodb", "merge_incremental_stats({}): empty, nothing to do", date_str);
+            return;
+        }
+
+        self.rt.block_on(async {
+            let models: Vec<WriteModel> = data
+                .iter()
+                .map(|(key, count)| {
+                    UpdateOneModel::builder()
+                        .namespace(ns.clone())
+                        .filter(doc! { "date": date_str, "key": key })
+                        .update(doc! { "$inc": { "count": *count as i64 } })
+                        .upsert(true)
+                        .build()
+                        .into()
+                })
+                .collect();
+
+            client
+                .bulk_write(models)
+                .await
+                .expect("Failed to merge incremental stats via bulk_write");
+            let t1 = Instant::now();
+
+            tdebug!("mongodb",
+                "merge_incremental_stats({}): bulk_write={:?} ({} keys)",
+                date_str,
+                t1 - t0,
+                key_count,
             );
         });
     }

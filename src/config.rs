@@ -5,6 +5,20 @@ use serde::{Deserialize, Serialize};
 pub use keymouse_common::config::{DatabaseConfig, MongoConfig, SqliteConfig};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum UpdateMode {
+    #[serde(rename = "diff")]
+    Diff,
+    #[serde(rename = "full")]
+    Full,
+}
+
+impl Default for UpdateMode {
+    fn default() -> Self {
+        Self::Diff
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub database: DatabaseConfig,
     pub port: u16,
@@ -13,6 +27,8 @@ pub struct Config {
     pub save_interval_secs: u64,
     #[serde(default)]
     pub log: LogConfig,
+    #[serde(default)]
+    pub update_mode: UpdateMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,6 +82,7 @@ impl Default for Config {
             listener: "rdev".to_string(),
             save_interval_secs: default_save_interval(),
             log: LogConfig::default(),
+            update_mode: UpdateMode::default(),
         }
     }
 }

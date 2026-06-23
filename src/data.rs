@@ -3,7 +3,18 @@ use std::mem;
 
 use chrono::Local;
 
-use crate::{tinfo, database::{Database, ImportMode}};
+use crate::{
+    config::UpdateMode,
+    database::{Database, ImportMode},
+    tinfo,
+};
+
+pub struct SaveResult {
+    pub date: String,
+    pub snapshot: HashMap<String, u64>,
+    pub delta: HashMap<String, u64>,
+    pub is_rollover: bool,
+}
 
 pub struct MonitorData {
     pub base_counts: HashMap<String, u64>,
@@ -64,9 +75,10 @@ impl MonitorData {
         }
     }
 
-    /// Merges incremental into base and returns (today, snapshot) for the caller to save.
-    /// The lock should be released before calling db.upsert_day_stats() with the returned data.
-    pub fn prepare_save(&mut self) -> Option<(String, HashMap<String, u64>)> {
+    /// Merges incremental into base and returns a SaveResult.
+    /// The lock should be released before calling db.upsert_day_stats()
+    /// or db.merge_incremental_stats() with the returned data.
+    pub fn prepare_save(&mut self) -> Option<SaveResult> {
         let today_str = Local::now().format("%Y-%m-%d").to_string();
 
         if self.today != today_str {
@@ -77,26 +89,43 @@ impl MonitorData {
             for (key, value) in self.incremental_counts.drain() {
                 *self.base_counts.entry(key).or_insert(0) += value;
             }
-            return Some((old_today, yesterday));
+            return Some(SaveResult {
+                date: old_today,
+                snapshot: yesterday,
+                delta: HashMap::new(),
+                is_rollover: true,
+            });
         }
 
         if self.incremental_counts.is_empty() {
             return None;
         }
 
-        // Normal save: drain incremental into base, return snapshot
-        for (key, value) in self.incremental_counts.drain() {
-            *self.base_counts.entry(key).or_insert(0) += value;
+        // Normal save: drain incremental into base, return delta + snapshot
+        let delta = mem::take(&mut self.incremental_counts);
+        for (key, value) in &delta {
+            *self.base_counts.entry(key.clone()).or_insert(0) += value;
         }
-        Some((self.today.clone(), self.base_counts.clone()))
+        Some(SaveResult {
+            date: self.today.clone(),
+            snapshot: self.base_counts.clone(),
+            delta,
+            is_rollover: false,
+        })
     }
 
-    pub fn save_to_db(&mut self, db: &Database) {
-        if let Some((date, counts)) = self.prepare_save() {
-            db.upsert_day_stats(&date, &counts);
-            // On rollover, also save today's data if any incremental was moved
-            if date != self.today && !self.base_counts.is_empty() {
-                db.upsert_day_stats(&self.today, &self.base_counts);
+    pub fn save_to_db(&mut self, db: &Database, update_mode: &UpdateMode) {
+        if let Some(result) = self.prepare_save() {
+            if result.is_rollover {
+                db.upsert_day_stats(&result.date, &result.snapshot);
+                if !self.base_counts.is_empty() {
+                    db.upsert_day_stats(&self.today, &self.base_counts);
+                }
+            } else {
+                match update_mode {
+                    UpdateMode::Diff => db.merge_incremental_stats(&result.date, &result.delta),
+                    UpdateMode::Full => db.upsert_day_stats(&result.date, &result.snapshot),
+                }
             }
         }
     }
@@ -191,18 +220,29 @@ mod tests {
     #[test]
     fn test_save_to_db_merges_and_clears_incremental() {
         let db = make_db();
-        let mut data = make_empty();
         let today = make_today();
-        data.base_counts.insert("a".to_string(), 10);
+
+        // Pre-populate DB with base data
+        let mut base = HashMap::new();
+        base.insert("a".to_string(), 10);
+        db.upsert_day_stats(&today, &base);
+
+        // Load from DB and add incremental
+        let mut data = MonitorData {
+            base_counts: db.get_stats_for_day(&today),
+            incremental_counts: HashMap::new(),
+            today: today.clone(),
+        };
         data.increase_count("a");
         data.increase_count("b");
 
-        data.save_to_db(&db);
+        data.save_to_db(&db, &UpdateMode::Diff);
 
         assert!(data.incremental_counts.is_empty());
         assert_eq!(data.base_counts.get("a"), Some(&11));
         assert_eq!(data.base_counts.get("b"), Some(&1));
 
+        // DB should reflect merged values (base from earlier + delta now)
         let saved = db.get_stats_for_day(&today);
         assert_eq!(saved.get("a"), Some(&11));
         assert_eq!(saved.get("b"), Some(&1));
@@ -214,7 +254,7 @@ mod tests {
         let mut data = make_empty();
         data.base_counts.insert("k".to_string(), 7);
 
-        data.save_to_db(&db);
+        data.save_to_db(&db, &UpdateMode::Full);
 
         assert_eq!(data.base_counts.get("k"), Some(&7));
         let saved = db.get_stats_for_day("2026-06-22");
@@ -231,7 +271,7 @@ mod tests {
         data.increase_count("new_day");
 
         // save_to_db handles both saves: flushes yesterday, persists today
-        data.save_to_db(&db);
+        data.save_to_db(&db, &UpdateMode::Full);
 
         assert_eq!(data.today, today);
         assert!(data.incremental_counts.is_empty());
@@ -242,5 +282,78 @@ mod tests {
         assert_eq!(saved.get("new_day"), Some(&1), "new data in today's db entry");
         let old_saved = db.get_stats_for_day("2000-01-01");
         assert_eq!(old_saved.get("old"), Some(&99), "old base saved to yesterday's date");
+    }
+
+    #[test]
+    fn test_prepare_save_returns_delta() {
+        let mut data = make_empty();
+        let today = make_today();
+        data.today = today.clone();
+        data.increase_count("a");
+        data.increase_count("b");
+
+        let result = data.prepare_save();
+        assert!(result.is_some());
+        let result = result.unwrap();
+        assert_eq!(result.date, today);
+        assert!(!result.is_rollover);
+        assert_eq!(result.delta.get("a"), Some(&1));
+        assert_eq!(result.delta.get("b"), Some(&1));
+        assert_eq!(result.snapshot.get("a"), Some(&1));
+        assert_eq!(result.snapshot.get("b"), Some(&1));
+    }
+
+    #[test]
+    fn test_prepare_save_rollover_has_empty_delta() {
+        let mut data = make_empty();
+        data.today = "2000-01-01".to_string();
+        data.base_counts.insert("old".to_string(), 42);
+
+        let result = data.prepare_save();
+        assert!(result.is_some());
+        let result = result.unwrap();
+        assert_eq!(result.date, "2000-01-01");
+        assert!(result.is_rollover);
+        assert!(result.delta.is_empty());
+        assert_eq!(result.snapshot.get("old"), Some(&42));
+    }
+
+    #[test]
+    fn test_save_to_db_merges_incrementally() {
+        let db = make_db();
+        let today = make_today();
+
+        // Pre-populate DB with base data (simulates previous session)
+        let mut base = HashMap::new();
+        base.insert("a".to_string(), 10);
+        db.upsert_day_stats(&today, &base);
+
+        // Load from DB (simulates MonitorData::new)
+        let mut data = MonitorData {
+            base_counts: db.get_stats_for_day(&today),
+            incremental_counts: HashMap::new(),
+            today: today.clone(),
+        };
+        assert_eq!(data.base_counts.get("a"), Some(&10));
+
+        // New keypresses since last save
+        data.increase_count("a");
+        data.increase_count("b");
+        data.save_to_db(&db, &UpdateMode::Diff);
+
+        // Verify: incremental merge should have added to existing
+        let saved = db.get_stats_for_day(&today);
+        assert_eq!(saved.get("a"), Some(&11), "a was 10, incremented by 1 -> 11");
+        assert_eq!(saved.get("b"), Some(&1), "b new -> 1");
+
+        // Another round of diffs
+        data.increase_count("a");
+        data.increase_count("c");
+        data.save_to_db(&db, &UpdateMode::Diff);
+
+        let saved = db.get_stats_for_day(&today);
+        assert_eq!(saved.get("a"), Some(&12), "a was 11, incremented by 1 -> 12");
+        assert_eq!(saved.get("b"), Some(&1), "b unchanged");
+        assert_eq!(saved.get("c"), Some(&1), "c new -> 1");
     }
 }

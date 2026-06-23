@@ -40,6 +40,7 @@ pub trait DatabaseBackend: Send {
     fn get_stats_for_day(&self, date_str: &str) -> HashMap<String, u64>;
     fn get_stats_for_range(&self, start_date: &str, end_date: &str) -> HashMap<String, u64>;
     fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>);
+    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>);
     fn export_to_json(&self, format: &str) -> String;
     fn import_from_json(&mut self, json_str: &str, mode: ImportMode);
     fn backend_type(&self) -> BackendType;
@@ -91,6 +92,10 @@ impl Database {
 
     pub fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
         self.inner.upsert_day_stats(date_str, data)
+    }
+
+    pub fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
+        self.inner.merge_incremental_stats(date_str, data)
     }
 
     pub fn export_to_json(&self, format: &str) -> String {
