@@ -117,13 +117,27 @@ async fn get_history(
     Ok(Json(json!(result)))
 }
 
+#[derive(Deserialize)]
+pub struct ExportParams {
+    pub format: Option<String>,
+}
+
 async fn export_handler(
     State(state): State<AppState>,
+    Query(params): Query<ExportParams>,
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    let fmt = params.format.as_deref().unwrap_or("nested");
+    if fmt != "nested" && fmt != "flat" {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(json!({"error": "Invalid format, use 'nested' or 'flat'."})),
+        ));
+    }
     let db = state.db.clone();
+    let fmt_owned = fmt.to_string();
     let json_str = tokio::task::spawn_blocking(move || {
         let db = db.lock().unwrap();
-        db.export_to_json()
+        db.export_to_json(&fmt_owned)
     })
     .await
     .map_err(|_| {
