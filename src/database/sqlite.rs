@@ -5,7 +5,7 @@ use serde_json;
 
 use crate::config::SqliteConfig;
 
-use super::{BackendType, DatabaseBackend};
+use super::{BackendType, DatabaseBackend, ImportMode};
 
 pub struct SqliteBackend {
     conn: Connection,
@@ -162,6 +162,69 @@ impl DatabaseBackend for SqliteBackend {
         });
 
         serde_json::to_string_pretty(&export).expect("Failed to serialize export JSON")
+    }
+
+    fn import_from_json(&mut self, json_str: &str, mode: ImportMode) {
+        let value: serde_json::Value = serde_json::from_str(json_str)
+            .expect("Failed to parse import JSON");
+        let records = value
+            .get("records")
+            .and_then(|v| v.as_object())
+            .expect("Import JSON missing 'records' object");
+
+        let total = records.len();
+        if total == 0 {
+            println!("[sqlite] Import JSON contains 0 records, skipping.");
+            return;
+        }
+
+        // Pre-read existing records for merge mode (before transaction)
+        let existing_map: HashMap<String, HashMap<String, u64>> = if mode == ImportMode::Merge {
+            records
+                .keys()
+                .filter_map(|date| {
+                    let data = self.get_stats_for_day(date);
+                    if data.is_empty() { None } else { Some((date.clone(), data)) }
+                })
+                .collect()
+        } else {
+            HashMap::new()
+        };
+
+        let tx = self.conn.transaction()
+            .expect("Failed to begin transaction");
+        let upsert_sql = format!(
+            "INSERT OR REPLACE INTO {} (date, data) VALUES (?1, ?2)",
+            self.table_name
+        );
+        {
+            let mut stmt = tx.prepare_cached(&upsert_sql)
+                .expect("Failed to prepare upsert statement");
+
+            for (date, data_value) in records {
+                let incoming: HashMap<String, u64> =
+                    serde_json::from_value(data_value.clone()).unwrap_or_default();
+                let data = if mode == ImportMode::Merge {
+                    let mut merged = existing_map.get(date.as_str()).cloned().unwrap_or_default();
+                    for (k, v) in incoming {
+                        *merged.entry(k).or_insert(0) += v;
+                    }
+                    merged
+                } else {
+                    incoming
+                };
+                let json_data = serde_json::to_string(&data)
+                    .expect("Failed to serialize stats to JSON");
+                stmt.execute([date.as_str(), &json_data])
+                    .expect("Failed to upsert daily stats");
+            }
+        }
+        tx.commit().expect("Failed to commit transaction");
+
+        println!(
+            "[sqlite] Imported {} date records from JSON (mode: {:?}).",
+            total, mode
+        );
     }
 
 
