@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::PathBuf;
 
 use crate::{tinfo, twarn};
 use serde::{Deserialize, Serialize};
@@ -184,11 +184,18 @@ impl Default for Config {
     }
 }
 
+fn exe_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 impl Config {
     pub fn load() -> Self {
-        let path = Path::new("config.json");
+        let path = exe_dir().join("config.json");
         if path.exists() {
-            let content = std::fs::read_to_string("config.json").unwrap_or_default();
+            let content = std::fs::read_to_string(&path).unwrap_or_default();
             serde_json::from_str(&content).unwrap_or_else(|e| {
                 let cfg = Self::default();
                 twarn!("config", "Failed to parse config.json ({}), using defaults", e);

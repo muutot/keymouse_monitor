@@ -1,9 +1,11 @@
 #![windows_subsystem = "windows"]
 
-use std::time::Duration;
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use parking_lot::RwLock;
 use tokio::sync::watch;
@@ -22,6 +24,15 @@ use data::MonitorData;
 use database::Database;
 
 #[cfg(windows)]
+static OS_SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
+#[cfg(windows)]
+unsafe extern "system" fn console_ctrl_handler(_: u32) -> i32 {
+    OS_SHUTDOWN.store(true, Ordering::SeqCst);
+    1
+}
+
+#[cfg(windows)]
 fn init_console() {
     unsafe {
         windows_sys::Win32::System::Console::AttachConsole(
@@ -30,9 +41,32 @@ fn init_console() {
     }
 }
 
+#[cfg(windows)]
 fn should_show_console() -> bool {
     let args: Vec<String> = std::env::args().collect();
     args.iter().any(|a| a == "--console" || a == "-c")
+}
+
+async fn wait_for_shutdown() {
+    #[cfg(windows)]
+    {
+        unsafe {
+            windows_sys::Win32::System::Console::SetConsoleCtrlHandler(
+                Some(console_ctrl_handler),
+                1,
+            );
+        }
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = async {
+                while !OS_SHUTDOWN.load(Ordering::Relaxed) {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+            } => {},
+        }
+    }
+    #[cfg(not(windows))]
+    tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
 }
 
 #[tokio::main]
@@ -122,7 +156,7 @@ async fn main() {
             .await;
     });
 
-    tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+    wait_for_shutdown().await;
     tinfo!("main", "Shutdown signal received, saving data...");
     let _ = shutdown_tx.send(true);
 
