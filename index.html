@@ -750,6 +750,7 @@
     <button type="button" id="query-history-btn">查询历史</button>
     <button type="button" id="refresh-live-btn">刷新实时数据</button>
     <button type="button" id="import-btn" style="background-color:#03dac6;">导入数据</button>
+    <button type="button" id="export-btn" style="background-color:#03dac6;">导出数据</button>
     <div class="status-display" id="status-display">当前模式: 实时数据</div>
     <span id="version-badge" style="font-size:11px;color:#888;margin-left:auto;"></span>
 </div>
@@ -1260,6 +1261,24 @@
       modalResult.style.display = 'block';
     } finally {
       modalImport.disabled = false;
+    }
+  });
+
+  document.getElementById('export-btn').addEventListener('click', async () => {
+    try {
+      const response = await fetch('/api/export');
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `keymonitor-export-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('导出失败: ' + e.message);
     }
   });
 
