@@ -3,8 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-use crate::{tinfo, twarn, tdebug};
-use crate::config::SqliteConfig;
+use crate::{tinfo, twarn, tdebug, config::SqliteConfig};
 
 use super::{BackendType, DatabaseBackend, ImportMode};
 
@@ -148,10 +147,8 @@ impl DatabaseBackend for SqliteBackend {
             })
             .expect("Failed to query day stats");
         let mut map = HashMap::new();
-        for r in results {
-            if let Ok((key, count)) = r {
-                map.insert(key, count);
-            }
+        for (key, count) in results.flatten() {
+            map.insert(key, count);
         }
         map
     }
@@ -178,10 +175,8 @@ impl DatabaseBackend for SqliteBackend {
             })
             .expect("Failed to query aggregation data");
         let mut aggregated = HashMap::new();
-        for result in results {
-            if let Ok((key, value)) = result {
-                aggregated.insert(key, value);
-            }
+        for (key, value) in results.flatten() {
+            aggregated.insert(key, value);
         }
         aggregated
     }

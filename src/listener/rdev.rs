@@ -1,18 +1,15 @@
 use std::borrow::Cow;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+use std::thread;
 
 use parking_lot::RwLock;
-use rdev::Event;
-use rdev::EventType;
+use rdev::{Event, EventType};
 use tokio::sync::watch;
 
-use crate::{tinfo, terror};
-use crate::data::MonitorData;
-use crate::maps;
+use crate::{tinfo, terror, data::MonitorData, maps};
 
 pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, client_count: Arc<AtomicUsize>) {
-    std::thread::spawn(move || {
+    thread::spawn(move || {
         if let Err(e) = rdev::listen(move |event: Event| {
             if matches!(event.event_type, EventType::MouseMove { .. }) {
                 return;

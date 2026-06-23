@@ -1,13 +1,11 @@
 use std::borrow::Cow;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
 
 use parking_lot::RwLock;
 use rdev::EventType;
 use tokio::sync::watch;
 
-use crate::data::MonitorData;
-use crate::maps;
+use crate::{data::MonitorData, maps};
 
 pub struct CallbackData {
     pub data: Arc<RwLock<MonitorData>>,
