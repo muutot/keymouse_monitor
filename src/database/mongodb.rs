@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use futures::TryStreamExt;
-use mongodb::bson::doc;
-use mongodb::options::{AggregateOptions, FindOptions, UpdateOptions};
+use mongodb::bson::{doc, Document};
+use mongodb::options::{AggregateOptions, FindOptions};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
@@ -12,14 +12,13 @@ use crate::config::MongoConfig;
 use super::{BackendType, DatabaseBackend, ImportMode};
 
 #[derive(Debug, Serialize, Deserialize)]
-struct DailyStat {
+struct FlatStat {
     date: String,
-    data: HashMap<String, u64>,
+    key: String,
+    count: u64,
 }
 
 pub struct MongoBackend {
-    /// Dedicated runtime created once in a blocking context;
-    /// all mongodb ops run inside this runtime via rt.block_on().
     rt: Runtime,
     client: mongodb::Client,
     db_name: String,
@@ -36,10 +35,8 @@ fn redact_credentials(uri: &str) -> String {
 }
 
 fn build_uri(cfg: &MongoConfig) -> String {
-    // Build URI from individual config fields
     let mut result = format!("{}://", cfg.protocol);
 
-    // Add credentials if provided
     if let (Some(username), Some(password)) = (&cfg.username, &cfg.password) {
         if !username.is_empty() && !password.is_empty() {
             let encoded_user = url_encode(username);
@@ -48,52 +45,43 @@ fn build_uri(cfg: &MongoConfig) -> String {
         }
     }
 
-    // Add hosts
     if let Some(hosts) = &cfg.hosts {
         if !hosts.is_empty() {
             result.push_str(&hosts.join(","));
         }
     }
 
-    // Add database
     let db = &cfg.database;
     if !db.is_empty() {
         result.push_str(&format!("/{}", db));
     }
 
-    // Build query parameters
     let mut params = Vec::new();
 
-    // SSL
     if cfg.ssl {
         params.push("ssl=true".to_string());
     }
 
-    // Replica set
     if let Some(replica_set) = &cfg.replica_set {
         if !replica_set.is_empty() {
             params.push(format!("replicaSet={}", replica_set));
         }
     }
 
-    // Auth source
     if !cfg.auth_source.is_empty() {
         params.push(format!("authSource={}", cfg.auth_source));
     }
 
-    // App name
     if let Some(app_name) = &cfg.app_name {
         if !app_name.is_empty() {
             params.push(format!("appName={}", app_name));
         }
     }
 
-    // Add query parameters to URI
     if !params.is_empty() {
         result.push_str(&format!("?{}", params.join("&")));
     }
 
-    // Add timeouts
     if !result.contains("connectTimeoutMS") {
         let sep = if result.contains('?') { "&" } else { "?" };
         result.push_str(&format!("{}connectTimeoutMS={}", sep, cfg.connect_timeout_ms));
@@ -123,8 +111,7 @@ fn url_encode(s: &str) -> String {
 }
 
 impl MongoBackend {
-    /// MUST be called from a **non‑tokio** thread (e.g. spawn_blocking).
-    pub fn new(cfg: &MongoConfig, _use_server_aggregation: bool) -> Self {
+    pub fn new(cfg: &MongoConfig) -> Self {
         let uri = build_uri(cfg);
         println!("[mongodb] URI: {}", redact_credentials(&uri));
 
@@ -162,13 +149,14 @@ impl MongoBackend {
         match ping_result {
             Ok(_) => {
                 println!("[mongodb] Connection established.");
-                let collection = db.collection::<DailyStat>(&self.collection_name);
+                let collection = self.raw_collection();
                 let index = mongodb::IndexModel::builder()
-                    .keys(doc! { "date": 1 })
+                    .keys(doc! { "date": 1, "key": 1 })
                     .build();
                 let _ = self
                     .rt
                     .block_on(async { collection.create_index(index, None).await });
+                self.migrate_old_format();
                 println!("[mongodb] Database initialization complete.");
                 Ok(())
             }
@@ -176,7 +164,63 @@ impl MongoBackend {
         }
     }
 
-    fn collection(&self) -> mongodb::Collection<DailyStat> {
+    fn migrate_old_format(&self) {
+        let raw = self.raw_collection();
+        let has_old = self.rt.block_on(async {
+            raw.find_one(doc! { "data": { "$exists": true } }, None)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
+        });
+        if !has_old {
+            return;
+        }
+
+        println!("[mongodb] Migrating old nested format to flat format...");
+        self.rt.block_on(async {
+            let mut cursor = raw
+                .find(doc! { "data": { "$exists": true } }, None)
+                .await
+                .expect("Failed to query old format docs");
+
+            let mut flat_docs = Vec::new();
+            while let Some(old_doc) = cursor.try_next().await.unwrap_or(None) {
+                let date = old_doc.get_str("date").ok().map(String::from);
+                let data = old_doc
+                    .get_document("data")
+                    .ok()
+                    .map(|d| d.clone());
+                if let (Some(date), Some(data)) = (date, data) {
+                    for (key, value) in data.iter() {
+                        if let Some(count) = value.as_i64() {
+                            flat_docs.push(doc! {
+                                "date": &date,
+                                "key": key,
+                                "count": count,
+                            });
+                        }
+                    }
+                }
+            }
+
+            if !flat_docs.is_empty() {
+                raw.insert_many(flat_docs, None)
+                    .await
+                    .expect("Failed to insert migrated flat docs");
+                raw.delete_many(doc! { "data": { "$exists": true } }, None)
+                    .await
+                    .expect("Failed to delete old format docs");
+                println!("[mongodb] Migration complete.");
+            }
+        });
+    }
+
+    fn raw_collection(&self) -> mongodb::Collection<Document> {
+        self.client.database(&self.db_name).collection(&self.collection_name)
+    }
+
+    fn flat_collection(&self) -> mongodb::Collection<FlatStat> {
         self.client.database(&self.db_name).collection(&self.collection_name)
     }
 }
@@ -187,30 +231,30 @@ impl DatabaseBackend for MongoBackend {
     }
 
     fn get_stats_for_day(&self, date_str: &str) -> HashMap<String, u64> {
-        let collection = self.collection();
+        let collection = self.flat_collection();
         let filter = doc! { "date": date_str };
         self.rt.block_on(async {
-            collection
-                .find_one(filter, None)
+            let mut cursor = collection
+                .find(filter, None)
                 .await
-                .ok()
-                .flatten()
-                .map(|d| d.data)
-                .unwrap_or_default()
+                .expect("Failed to query day stats");
+            let mut result = HashMap::new();
+            while let Some(stat) = cursor.try_next().await.unwrap_or(None) {
+                result.insert(stat.key, stat.count);
+            }
+            result
         })
     }
 
     fn get_stats_for_range(&self, start_date: &str, end_date: &str) -> HashMap<String, u64> {
-        let collection = self.collection();
+        let raw = self.raw_collection();
         let pipeline = vec![
             doc! { "$match": { "date": { "$gte": start_date, "$lte": end_date } } },
-            doc! { "$project": { "kv": { "$objectToArray": "$data" } } },
-            doc! { "$unwind": "$kv" },
-            doc! { "$group": { "_id": "$kv.k", "total": { "$sum": "$kv.v" } } },
+            doc! { "$group": { "_id": "$key", "total": { "$sum": "$count" } } },
         ];
         self.rt.block_on(async {
             let t0 = Instant::now();
-            let mut cursor = collection
+            let mut cursor = raw
                 .aggregate(pipeline, AggregateOptions::builder().build())
                 .await
                 .expect("Failed to aggregate range");
@@ -256,127 +300,218 @@ impl DatabaseBackend for MongoBackend {
     }
 
     fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
-        let collection = self.collection();
-        let filter = doc! { "date": date_str };
-        let update = doc! { "$set": { "data": mongodb::bson::to_bson(data).unwrap() } };
-        let opts = UpdateOptions::builder().upsert(true).build();
+        let raw = self.raw_collection();
         self.rt.block_on(async {
-            collection
-                .update_one(filter, update, opts)
+            raw.delete_many(doc! { "date": date_str }, None)
                 .await
-                .expect("Failed to upsert daily stats");
+                .expect("Failed to delete existing day stats");
+
+            if data.is_empty() {
+                return;
+            }
+
+            let docs: Vec<Document> = data
+                .iter()
+                .map(|(key, count)| {
+                    doc! {
+                        "date": date_str,
+                        "key": key,
+                        "count": *count as i64,
+                    }
+                })
+                .collect();
+
+            raw.insert_many(docs, None)
+                .await
+                .expect("Failed to insert day stats");
         });
     }
 
-    fn export_to_json(&self) -> String {
-        let collection = self.collection();
+    fn export_to_json(&self, format: &str) -> String {
+        let raw = self.raw_collection();
         let opts = FindOptions::builder()
-            .sort(doc! { "date": 1 })
+            .sort(doc! { "date": 1, "key": 1 })
             .build();
         self.rt.block_on(async {
-            let mut cursor = collection
+            let mut cursor = raw
                 .find(doc! {}, opts)
                 .await
                 .expect("Failed to query export data");
 
-            let mut records = serde_json::Map::new();
-            while let Some(stat) = cursor.try_next().await.unwrap_or(None) {
-                let value =
-                    serde_json::to_value(&stat.data).unwrap_or(serde_json::Value::Null);
-                records.insert(stat.date, value);
+            let mut flat_rows: Vec<Document> = Vec::new();
+            while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
+                flat_rows.push(doc);
             }
 
-            let export = serde_json::json!({
-                "backend": "mongodb",
-                "exported_at": chrono::Local::now()
-                    .format("%Y-%m-%dT%H:%M:%S")
-                    .to_string(),
-                "records": records,
-            });
-            serde_json::to_string_pretty(&export).expect("Failed to serialize export JSON")
+            match format {
+                "flat" => {
+                    let records: Vec<serde_json::Value> = flat_rows
+                        .iter()
+                        .filter_map(|d| {
+                            let date = d.get_str("date").ok()?;
+                            let key = d.get_str("key").ok()?;
+                            let count = d.get_i64("count").unwrap_or(0);
+                            Some(serde_json::json!({
+                                "date": date,
+                                "key": key,
+                                "count": count,
+                            }))
+                        })
+                        .collect();
+
+                    let export = serde_json::json!({
+                        "backend": "mongodb",
+                        "exported_at": chrono::Local::now()
+                            .format("%Y-%m-%dT%H:%M:%S")
+                            .to_string(),
+                        "records": records,
+                    });
+                    serde_json::to_string_pretty(&export).expect("Failed to serialize export JSON")
+                }
+                _ => {
+                    // nested format (default, backward compatible)
+                    let mut records = serde_json::Map::new();
+                    for d in &flat_rows {
+                        let date = d.get_str("date").unwrap_or("");
+                        let key = d.get_str("key").unwrap_or("");
+                        let count = d.get_i64("count").unwrap_or(0) as u64;
+                        let entry = records
+                            .entry(date.to_string())
+                            .or_insert_with(|| serde_json::json!({}));
+                        if let Some(obj) = entry.as_object_mut() {
+                            obj.insert(key.to_string(), serde_json::json!(count));
+                        }
+                    }
+
+                    let export = serde_json::json!({
+                        "backend": "mongodb",
+                        "exported_at": chrono::Local::now()
+                            .format("%Y-%m-%dT%H:%M:%S")
+                            .to_string(),
+                        "records": records,
+                    });
+                    serde_json::to_string_pretty(&export).expect("Failed to serialize export JSON")
+                }
+            }
         })
     }
 
     fn import_from_json(&mut self, json_str: &str, mode: ImportMode) {
         let value: serde_json::Value = serde_json::from_str(json_str)
             .expect("Failed to parse import JSON");
-        let records = value
-            .get("records")
-            .and_then(|v| v.as_object())
-            .expect("Import JSON missing 'records' object");
 
-        let total = records.len();
-        if total == 0 {
-            println!("[mongodb] Import JSON contains 0 records, skipping.");
-            return;
-        }
+        // Parse records into per-date HashMap
+        let records_map: HashMap<String, HashMap<String, u64>> = match value["records"] {
+            serde_json::Value::Object(ref obj) => {
+                // Old nested format: { "records": { "2026-06-23": { "a": 10 } } }
+                let mut map = HashMap::new();
+                for (date, data_value) in obj {
+                    let data: HashMap<String, u64> =
+                        serde_json::from_value(data_value.clone()).unwrap_or_default();
+                    map.insert(date.clone(), data);
+                }
+                if map.is_empty() {
+                    println!("[mongodb] Import JSON contains 0 records, skipping.");
+                    return;
+                }
+                map
+            }
+            serde_json::Value::Array(ref arr) => {
+                // New flat format: { "records": [ { "date": "...", "key": "...", "count": N } ] }
+                let mut map: HashMap<String, HashMap<String, u64>> = HashMap::new();
+                for item in arr {
+                    let date = item["date"].as_str().map(String::from);
+                    let key = item["key"].as_str().map(String::from);
+                    let count = item["count"].as_i64().unwrap_or(0) as u64;
+                    if let (Some(date), Some(key)) = (date, key) {
+                        map.entry(date).or_default().insert(key, count);
+                    }
+                }
+                if map.is_empty() {
+                    println!("[mongodb] Import JSON contains 0 records, skipping.");
+                    return;
+                }
+                map
+            }
+            _ => {
+                panic!("Import JSON 'records' must be an object (nested) or array (flat)");
+            }
+        };
 
-        let collection = self.collection();
-        let dates: Vec<&str> = records.keys().map(|s| s.as_str()).collect();
+        let total = records_map.len();
+        let dates: Vec<&str> = records_map.keys().map(|s| s.as_str()).collect();
+        let raw = self.raw_collection();
 
         self.rt.block_on(async {
             if mode == ImportMode::Overwrite {
-                collection
-                    .delete_many(doc! { "date": { "$in": &dates } }, None)
+                raw.delete_many(doc! { "date": { "$in": &dates } }, None)
                     .await
                     .expect("Failed to delete existing records");
 
-                let docs: Vec<DailyStat> = records
+                let docs: Vec<Document> = records_map
                     .iter()
-                    .map(|(date, data_value)| {
-                        let data: HashMap<String, u64> =
-                            serde_json::from_value(data_value.clone()).unwrap_or_default();
-                        DailyStat {
-                            date: date.clone(),
-                            data,
-                        }
+                    .flat_map(|(date, data)| {
+                        data.iter().map(move |(key, count)| {
+                            doc! {
+                                "date": date,
+                                "key": key,
+                                "count": *count as i64,
+                            }
+                        })
                     })
                     .collect();
 
-                collection
-                    .insert_many(docs, None)
-                    .await
-                    .expect("Failed to insert records");
+                if !docs.is_empty() {
+                    raw.insert_many(docs, None)
+                        .await
+                        .expect("Failed to insert records");
+                }
             } else {
-                let existing_map: HashMap<String, HashMap<String, u64>> = {
-                    let filter = doc! { "date": { "$in": &dates } };
-                    let mut cursor = collection
+                // Merge mode: read existing, merge, rewrite
+                let filter = doc! { "date": { "$in": &dates } };
+                let mut existing_map: HashMap<String, HashMap<String, u64>> = HashMap::new();
+                {
+                    let mut cursor = raw
                         .find(filter, None)
                         .await
                         .expect("Failed to query existing records for merge");
-                    let mut map = HashMap::new();
-                    while let Some(stat) = cursor.try_next().await.unwrap_or(None) {
-                        map.insert(stat.date, stat.data);
+                    while let Some(d) = cursor.try_next().await.unwrap_or(None) {
+                        if let (Some(date), Some(key), Some(count)) = (
+                            d.get_str("date").ok().map(String::from),
+                            d.get_str("key").ok().map(String::from),
+                            d.get_i64("count").ok().map(|v| v as u64),
+                        ) {
+                            existing_map.entry(date).or_default().insert(key, count);
+                        }
                     }
-                    map
-                };
+                }
 
-                collection
-                    .delete_many(doc! { "date": { "$in": &dates } }, None)
+                raw.delete_many(doc! { "date": { "$in": &dates } }, None)
                     .await
-                    .expect("Failed to delete existing records");
+                    .expect("Failed to delete existing records for merge");
 
-                let docs: Vec<DailyStat> = records
+                let docs: Vec<Document> = records_map
                     .iter()
-                    .map(|(date, data_value)| {
-                        let incoming: HashMap<String, u64> =
-                            serde_json::from_value(data_value.clone()).unwrap_or_default();
-                        let mut merged =
-                            existing_map.get(date.as_str()).cloned().unwrap_or_default();
+                    .flat_map(|(date, incoming)| {
+                        let mut merged = existing_map.remove(date.as_str()).unwrap_or_default();
                         for (k, v) in incoming {
-                            *merged.entry(k).or_insert(0) += v;
+                            *merged.entry(k.clone()).or_insert(0) += v;
                         }
-                        DailyStat {
-                            date: date.clone(),
-                            data: merged,
-                        }
+                        merged.into_iter().map(move |(key, count)| {
+                            doc! {
+                                "date": date,
+                                "key": key,
+                                "count": count as i64,
+                            }
+                        })
                     })
                     .collect();
 
-                collection
-                    .insert_many(docs, None)
-                    .await
-                    .expect("Failed to insert merged records");
+                if !docs.is_empty() {
+                    raw.insert_many(docs, None)
+                        .await
+                        .expect("Failed to insert merged records");
+                }
             }
         });
 
@@ -385,6 +520,4 @@ impl DatabaseBackend for MongoBackend {
             total, mode
         );
     }
-
-
 }
