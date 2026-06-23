@@ -1,75 +1,147 @@
-# Key Monitor v1.2.0
+# Key Monitor v1.3.1
 
-Real-time keyboard and mouse click statistics with a visual UI. Backend records input events via Windows hooks or rdev, stores counts in SQLite, and serves a live-updating HTML frontend.
+Real-time keyboard and mouse click statistics with a visual UI. Backend records input events via Windows hooks or rdev, stores counts in SQLite or MongoDB, and serves a live-updating HTML frontend.
 
 ## Quick Start
 
 ```bash
-# Run with default config (no config.json needed)
 cargo run --release
 ```
 
-Open `http://localhost:5000` in a browser to see the live keyboard/mouse layout.
+Open `http://localhost:5000` in a browser.
 
 ## CLI Arguments
 
 | Argument | Platform | Description |
 |---|---|---|
-| `--console`, `-c` | Windows | Show a console window (hidden by default via `#![windows_subsystem = "windows"]`) |
+| `--console`, `-c` | Windows | Attach a console window (hidden by default) |
 
 ## Configuration
 
-Create a `config.json` in the project root (optional — defaults apply otherwise):
+Create a `config.json` in the project root (optional — all fields have defaults):
 
 ```json
 {
-  "db_file": "monitor.sqlite",
+  "database": {
+    "backend": "sqlite",
+    "sqlite": {
+      "path": "monitor.sqlite",
+      "table": "daily_stats"
+    },
+    "mongodb": {
+      "database": "keymouse_monitor",
+      "hosts": ["localhost:27017"],
+      "ssl": true,
+      "collection": "daily_stats"
+    },
+    "use_server_aggregation": true
+  },
   "port": 5000,
-  "listener": "rawinput"
+  "listener": "rawinput",
+  "save_interval_secs": 60
 }
 ```
 
-### Fields
+### `config.database`
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `db_file` | string | `"monitor.sqlite"` | SQLite database file path |
+| `backend` | string | `"sqlite"` | `"sqlite"` or `"mongodb"` |
+| `sqlite` | object | `{path: "monitor.sqlite", table: "daily_stats"}` | SQLite settings |
+| `mongodb` | object | (see below) | MongoDB connection settings |
+| `use_server_aggregation` | bool | `true` | Use SQL/aggregation pipeline for range queries vs. client-side sum |
+
+#### `database.sqlite` fields
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `path` | string | `"monitor.sqlite"` | Database file path |
+| `table` | string | `"daily_stats"` | Table name |
+
+#### `database.mongodb` fields
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `protocol` | string | `"mongodb"` | URI protocol (`mongodb` / `mongodb+srv`) |
+| `database` | string | `"keymouse_monitor"` | Database name |
+| `username` | string (nullable) | `null` | Auth username |
+| `password` | string (nullable) | `null` | Auth password |
+| `auth_source` | string | `"admin"` | Auth source database |
+| `ssl` | bool | `true` | Use TLS |
+| `replica_set` | string (nullable) | `null` | Replica set name |
+| `app_name` | string (nullable) | `null` | Application name |
+| `hosts` | string array (nullable) | `null` | Host list, e.g. `["host:27017"]` |
+| `connect_timeout_ms` | number | `15000` | Connection timeout |
+| `server_selection_timeout_ms` | number | `30000` | Server selection timeout |
+| `collection` | string | `"daily_stats"` | Collection name |
+
+### Other top-level fields
+
+| Key | Type | Default | Description |
+|---|---|---|---|
 | `port` | number | `5000` | HTTP server port |
 | `listener` | string | `"rawinput"` (Windows)<br>`"rdev"` (other) | Input event backend |
+| `save_interval_secs` | number | `60` | Periodic DB save interval |
 
 ### `listener` values
 
-| Value | Platform | Keyboard | Mouse | Description |
-|---|---|---|---|---|
-| `"rawinput"` | Windows only | `WH_KEYBOARD_LL` hook | Raw Input (`WM_INPUT`) via hidden message-only window + `RIDEV_NOLEGACY` | **Default.** Filters out mouse-move events entirely at the driver level — zero CPU overhead for idle movement |
-| `"native"` | Windows only | `WH_KEYBOARD_LL` hook | `WH_MOUSE_LL` hook | Legacy approach. Mouse-move events are still delivered but filtered in the callback |
-| `"rdev"` | All platforms | rdev `listen()` | rdev `listen()` | Cross-platform fallback via the `rdev` crate |
+| Value | Platform | Keyboard | Mouse |
+|---|---|---|---|
+| `"rawinput"` | Windows | `WH_KEYBOARD_LL` hook | Raw Input (`WM_INPUT`) via hidden message-only window + `RIDEV_NOLEGACY` |
+| `"native"` | Windows | `WH_KEYBOARD_LL` hook | `WH_MOUSE_LL` hook |
+| `"rdev"` | All | rdev `listen()` | rdev `listen()` |
 
-### `listener` selection notes
-
-- On **Windows**, `"rawinput"` is recommended: mouse movement generates **zero** events, only clicks/wheel give you `WM_INPUT`.
-- On **non-Windows**, only `"rdev"` is available and is selected automatically.
-- If an unknown value is given, `"rdev"` is used as the fallback.
+On non-Windows only `"rdev"` is available and selected automatically. Unknown values fall back to `"rdev"`.
 
 ## API Endpoints
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/keycounts` | Current in-memory key counts as JSON `{"key_name": count, ...}` |
+| `GET` | `/keycounts` | Current in-memory counts as JSON `{"key": count, ...}` |
 | `GET` | `/history?start=YYYY-MM-DD&end=YYYY-MM-DD` | Aggregated stats for a date range |
-| `GET` | `/events` | SSE stream — pushes updated JSON every time a key/button is pressed |
+| `GET` | `/events` | SSE stream — pushes full count JSON on each key/button press |
+| `GET` | `/api/export` | Full database export as JSON |
+| `POST` | `/api/import?mode=overwrite\|merge` | Import JSON data from export format |
+| `GET` | `/api/version` | `{"version": "1.3.1", "name": "keymouse-monitor"}` |
 
-Static files (`index.html`, `static/`) are served from the project root. The fallback route serves `index.html` for SPA-like navigation.
+### SSE format (`/events`)
 
-### Example
+```
+data: {"a": 42, "enter": 7, "mouse_left": 3, ...}\n\n
+```
+
+Fires on every key/button/wheel event (only when at least one SSE client is connected).
+
+### Export / Import JSON format
+
+```json
+{
+  "backend": "sqlite",
+  "exported_at": "2026-06-23T12:34:56",
+  "records": {
+    "2026-06-22": {"a": 100, "enter": 7},
+    "2026-06-23": {"a": 42, "mouse_left": 3}
+  }
+}
+```
+
+Import modes: `"overwrite"` (replace existing records) or `"merge"` (add counts).
+
+### Examples
 
 ```bash
 curl http://localhost:5000/keycounts
-# → {"a": 42, "enter": 7, "mouse_left": 3, ...}
-
 curl "http://localhost:5000/history?start=2026-06-01&end=2026-06-22"
-# → {"2026-06-01": {"a": 100, ...}, "2026-06-22": {"a": 42, ...}}
+curl http://localhost:5000/api/export > backup.json
+curl -X POST "http://localhost:5000/api/import?mode=merge" -d @backup.json -H "Content-Type: application/json"
 ```
+
+## Data Persistence
+
+- Counts saved to SQLite/MongoDB every `save_interval_secs` (default 60).
+- Graceful shutdown via `Ctrl+C`: saves remaining in-memory data before exit.
+- DB schema (SQLite): table `daily_stats` with columns `date` (TEXT PRIMARY KEY), `data` (TEXT — JSON blob).
+- MongoDB: collection `daily_stats` with documents `{date, data}`.
 
 ## Build Release
 
@@ -77,37 +149,38 @@ curl "http://localhost:5000/history?start=2026-06-01&end=2026-06-22"
 cargo build --release
 ```
 
-The single binary is at `target/release/keymouse-monitor.exe` (Windows) or `target/release/keymouse-monitor` (other). No runtime dependencies.
+Single binary at `target/release/keymouse-monitor` (`.exe` on Windows). No runtime dependencies.  
+Statically linked C runtime (via `.cargo/config.toml`).
 
-Release builds are also available as GitHub Actions artifacts (triggered on pushes to `main` that modify the `version` file). The release asset includes both the binary and `index.html`.
-
-## Data Persistence
-
-- Counts are saved to SQLite every **60 seconds** automatically.
-- Shutdown loses at most 60 seconds of data (graceful shutdown NOT yet implemented — in-memory deltas since last save are dropped).
-- Database schema: table `daily_stats` with columns `day` (DATE), `key_name` (TEXT), `count` (INTEGER), unique on `(day, key_name)`.
+CI (GitHub Actions) builds on push to `main` that modifies the `version` file; assets include binary + `index.html`.
 
 ## Project Structure
 
 ```
 ├── src/
-│   ├── main.rs              # Entry point, console attach, timer
-│   ├── config.rs            # Config loading from config.json
-│   ├── api.rs               # Axum router, SSE, /keycounts, /history
-│   ├── data.rs              # In-memory MonitorData + save logic
-│   ├── database.rs          # SQLite read/write via rusqlite
-│   ├── maps.rs              # Key/Button → display string mapping
+│   ├── main.rs               # Entry point, timer, graceful shutdown
+│   ├── config.rs             # Config loading + all serde structs
+│   ├── api.rs                # Axum router, SSE, all endpoints
+│   ├── data.rs               # In-memory MonitorData, save logic
+│   ├── database/
+│   │   ├── mod.rs            # Database enum, DatabaseBackend trait, ImportMode
+│   │   ├── sqlite.rs         # SQLite backend (rusqlite, json_each)
+│   │   └── mongodb.rs       # MongoDB backend (dedicated tokio runtime)
+│   ├── maps.rs               # Key/Button → display string mapping
 │   └── listener/
-│       ├── mod.rs           # Dispatch by config listener kind
-│       ├── common.rs        # Shared: CallbackData, process_event
-│       ├── keyboard.rs      # Shared: VK→Key mapping table
-│       ├── native.rs        # WH_KEYBOARD_LL + WH_MOUSE_LL backend
-│       ├── rawinput.rs      # WH_KEYBOARD_LL + Raw Input backend
-│       └── rdev.rs          # Cross-platform rdev backend
+│       ├── mod.rs            # Dispatch by kind (native/rawinput/rdev)
+│       ├── common.rs         # CallbackData, process_event
+│       ├── keyboard.rs       # VK → rdev::Key mapping
+│       ├── native.rs         # WH_KEYBOARD_LL + WH_MOUSE_LL
+│       ├── rawinput.rs       # WH_KEYBOARD_LL + Raw Input (stack buffer)
+│       └── rdev.rs           # Cross-platform rdev backend
 ├── tools/
-│   └── key_viewer/          # Standalone binary to inspect VK codes
-├── index.html               # Live keyboard + mouse visual frontend
-├── config.json              # Optional json config
-├── version                  # Current version string (used by CI)
+│   ├── key_viewer/           # Live VK code inspector
+│   ├── mouse_bench/          # CPU benchmark of 3 mouse backends
+│   └── db_check/             # Database connectivity checker
+├── index.html                # 1270-line SPA frontend (dark theme, grid layout)
+├── static/                   # Static assets
+├── config.json               # Optional config file
+├── version                   # Version string for CI (1.3.1)
 └── Cargo.toml
 ```
