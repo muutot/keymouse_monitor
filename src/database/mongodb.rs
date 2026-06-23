@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::time::Instant;
 
 use futures::TryStreamExt;
 use mongodb::bson::doc;
@@ -208,12 +209,17 @@ impl DatabaseBackend for MongoBackend {
             doc! { "$group": { "_id": "$kv.k", "total": { "$sum": "$kv.v" } } },
         ];
         self.rt.block_on(async {
+            let t0 = Instant::now();
             let mut cursor = collection
                 .aggregate(pipeline, AggregateOptions::builder().build())
                 .await
                 .expect("Failed to aggregate range");
+            let t1 = Instant::now();
+
             let mut aggregated = HashMap::new();
+            let mut count = 0u64;
             while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
+                count += 1;
                 if let (Some(key), Some(value)) = (
                     doc.get_str("_id").ok(),
                     doc.get_i64("total").ok().map(|v| v as u64),
@@ -221,6 +227,18 @@ impl DatabaseBackend for MongoBackend {
                     aggregated.insert(key.to_string(), value);
                 }
             }
+            let t2 = Instant::now();
+
+            println!(
+                "[debug] get_stats_for_range(start={}, end={}): \
+                 aggregate={:?}, iterate={:?} ({} docs), total={:?}",
+                start_date,
+                end_date,
+                t1 - t0,
+                t2 - t1,
+                count,
+                t2 - t0,
+            );
             aggregated
         })
     }
