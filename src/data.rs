@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use chrono::Local;
 
+use crate::tinfo;
 use crate::database::{Database, ImportMode};
 
 pub struct MonitorData {
@@ -15,14 +16,14 @@ impl MonitorData {
         let today_str = Local::now().format("%Y-%m-%d").to_string();
         let base = db.get_stats_for_day(&today_str);
 
-        println!("Data loading...");
+        tinfo!("data", "Data loading...");
         if base.is_empty() {
-            println!(
+            tinfo!("data",
                 "No data found for {} in database, starting from scratch.",
                 today_str
             );
         } else {
-            println!(
+            tinfo!("data",
                 "Successfully loaded base data for {} from database.",
                 today_str
             );

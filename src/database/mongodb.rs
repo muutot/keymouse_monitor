@@ -3,10 +3,12 @@ use std::time::Instant;
 
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Document};
+use mongodb::options::{DeleteManyModel, InsertOneModel, WriteModel};
 
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
+use crate::{tinfo, twarn, tdebug};
 use crate::config::MongoConfig;
 
 use super::{BackendType, DatabaseBackend, ImportMode};
@@ -113,7 +115,7 @@ fn url_encode(s: &str) -> String {
 impl MongoBackend {
     pub fn new(cfg: &MongoConfig) -> Self {
         let uri = build_uri(cfg);
-        println!("[mongodb] URI: {}", redact_credentials(&uri));
+        tinfo!("mongodb", "URI: {}", redact_credentials(&uri));
 
         let rt = Runtime::new().expect("Failed to create tokio runtime for MongoDB");
 
@@ -127,19 +129,19 @@ impl MongoBackend {
         let collection_name = cfg.collection.clone();
         let backend = Self { rt, client, db_name, collection_name };
         if let Err(e) = backend.init_db() {
-            eprintln!("\n\x1b[31m⚠ MongoDB connection failed:\x1b[0m");
-            eprintln!("  {e}");
-            eprintln!("  \nPossible causes:");
-            eprintln!("    • Network/firewall blocking Atlas (check your VPN/proxy)");
-            eprintln!("    • IP not whitelisted in Atlas console");
-            eprintln!("    • Wrong credentials in config.json");
-            eprintln!("  \nThe application will retry on each data save.\n");
+            twarn!("mongodb", "\n⚠ MongoDB connection failed:");
+            twarn!("mongodb", "  {e}");
+            twarn!("mongodb", "  \nPossible causes:");
+            twarn!("mongodb", "    • Network/firewall blocking Atlas (check your VPN/proxy)");
+            twarn!("mongodb", "    • IP not whitelisted in Atlas console");
+            twarn!("mongodb", "    • Wrong credentials in config.json");
+            twarn!("mongodb", "  \nThe application will retry on each data save.\n");
         }
         backend
     }
 
     fn init_db(&self) -> Result<(), String> {
-        println!("[mongodb] Connecting to MongoDB...");
+        tinfo!("mongodb", "Connecting to MongoDB...");
         let db = self.client.database(&self.db_name);
         let ping_result: Result<mongodb::bson::Document, String> = self.rt.block_on(async {
             db.run_command(doc! { "ping": 1 })
@@ -148,7 +150,7 @@ impl MongoBackend {
         });
         match ping_result {
             Ok(_) => {
-                println!("[mongodb] Connection established.");
+                tinfo!("mongodb", "Connection established.");
                 let collection = self.raw_collection();
                 let index = mongodb::IndexModel::builder()
                     .keys(doc! { "date": 1, "key": 1 })
@@ -157,7 +159,7 @@ impl MongoBackend {
                     .rt
                     .block_on(async { collection.create_index(index).await });
                 self.migrate_old_format();
-                println!("[mongodb] Database initialization complete.");
+                tinfo!("mongodb", "Database initialization complete.");
                 Ok(())
             }
             Err(e) => Err(e),
@@ -177,7 +179,7 @@ impl MongoBackend {
             return;
         }
 
-        println!("[mongodb] Migrating old nested format to flat format...");
+        tinfo!("mongodb", "Migrating old nested format to flat format...");
         self.rt.block_on(async {
             let mut cursor = raw
                 .find(doc! { "data": { "$exists": true } })
@@ -211,7 +213,7 @@ impl MongoBackend {
                 raw.delete_many(doc! { "data": { "$exists": true } })
                     .await
                     .expect("Failed to delete old format docs");
-                println!("[mongodb] Migration complete.");
+                tinfo!("mongodb", "Migration complete.");
             }
         });
     }
@@ -283,8 +285,8 @@ impl DatabaseBackend for MongoBackend {
             }
             let t2 = Instant::now();
 
-            println!(
-                "[debug] get_stats_for_range(start={}, end={}): \
+            tdebug!("mongodb",
+                "get_stats_for_range(start={}, end={}): \
                  aggregate(server)={:?}, iterate(network)={:?}, \
                  iterate(process)={:?} ({} docs), total={:?}",
                 start_date,
@@ -301,46 +303,48 @@ impl DatabaseBackend for MongoBackend {
 
     fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
         let raw = self.raw_collection();
+        let ns = raw.namespace();
+        let client = &self.client;
         let t0 = Instant::now();
         let key_count = data.len();
         let is_empty = data.is_empty();
         self.rt.block_on(async {
-            raw.delete_many(doc! { "date": date_str })
-                .await
-                .expect("Failed to delete existing day stats");
-            let t1 = Instant::now();
+            let mut models: Vec<WriteModel> = Vec::with_capacity(1 + key_count);
 
-            if is_empty {
-                println!(
-                    "[debug] upsert_day_stats({}): delete={:?} (empty), total={:?}",
-                    date_str, t1 - t0, t1 - t0,
+            models.push(
+                DeleteManyModel::builder()
+                    .namespace(ns.clone())
+                    .filter(doc! { "date": date_str })
+                    .build()
+                    .into(),
+            );
+
+            for (key, count) in data.iter() {
+                models.push(
+                    InsertOneModel::builder()
+                        .namespace(ns.clone())
+                        .document(doc! {
+                            "date": date_str,
+                            "key": key,
+                            "count": *count as i64,
+                        })
+                        .build()
+                        .into(),
                 );
-                return;
             }
 
-            let docs: Vec<Document> = data
-                .iter()
-                .map(|(key, count)| {
-                    doc! {
-                        "date": date_str,
-                        "key": key,
-                        "count": *count as i64,
-                    }
-                })
-                .collect();
-
-            raw.insert_many(docs)
+            client
+                .bulk_write(models)
                 .await
-                .expect("Failed to insert day stats");
-            let t2 = Instant::now();
+                .expect("Failed to upsert day stats via bulk_write");
+            let t1 = Instant::now();
 
-            println!(
-                "[debug] upsert_day_stats({}): delete={:?} + insert={:?} = {:?} ({} keys)",
+            tdebug!("mongodb",
+                "upsert_day_stats({}): bulk_write={:?} ({} keys{})",
                 date_str,
                 t1 - t0,
-                t2 - t1,
-                t2 - t0,
                 key_count,
+                if is_empty { ", empty" } else { "" },
             );
         });
     }
@@ -427,7 +431,7 @@ impl DatabaseBackend for MongoBackend {
                     map.insert(date.clone(), data);
                 }
                 if map.is_empty() {
-                    println!("[mongodb] Import JSON contains 0 records, skipping.");
+                    twarn!("mongodb", "Import JSON contains 0 records, skipping.");
                     return;
                 }
                 map
@@ -444,7 +448,7 @@ impl DatabaseBackend for MongoBackend {
                     }
                 }
                 if map.is_empty() {
-                    println!("[mongodb] Import JSON contains 0 records, skipping.");
+                    twarn!("mongodb", "Import JSON contains 0 records, skipping.");
                     return;
                 }
                 map
@@ -531,8 +535,8 @@ impl DatabaseBackend for MongoBackend {
             }
         });
 
-        println!(
-            "[mongodb] Imported {} date records from JSON (mode: {:?}).",
+        tinfo!("mongodb",
+            "Imported {} date records from JSON (mode: {:?}).",
             total, mode
         );
     }

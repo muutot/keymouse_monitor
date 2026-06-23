@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
+use crate::{tinfo, twarn, tdebug};
 use crate::config::SqliteConfig;
 
 use super::{BackendType, DatabaseBackend, ImportMode};
@@ -26,7 +27,7 @@ impl SqliteBackend {
     }
 
     fn init_db(&self) {
-        println!("[sqlite] Checking database table structure...");
+        tinfo!("sqlite", "Checking database table structure...");
 
         // Check if old nested-format table exists
         let has_old: bool = {
@@ -58,7 +59,7 @@ impl SqliteBackend {
             };
 
             if is_old {
-                println!("[sqlite] Migrating old nested format to flat format...");
+                tinfo!("sqlite", "Migrating old nested format to flat format...");
                 let tmp_table = format!("{}_new", self.table_name);
                 let create_sql = format!(
                     "CREATE TABLE {} (date TEXT, key TEXT, count INTEGER, \
@@ -109,7 +110,7 @@ impl SqliteBackend {
                     ))
                     .expect("Failed to rename table");
 
-                println!("[sqlite] Migration complete.");
+                tinfo!("sqlite", "Migration complete.");
             }
         } else {
             let sql = format!(
@@ -121,7 +122,7 @@ impl SqliteBackend {
             self.conn.execute_batch(&sql).expect("Failed to create table");
         }
 
-        println!("[sqlite] Database initialization complete.");
+        tinfo!("sqlite", "Database initialization complete.");
     }
 }
 
@@ -193,7 +194,7 @@ impl DatabaseBackend for SqliteBackend {
             // Delete any lingering rows for empty data
             let delete_sql = format!("DELETE FROM {} WHERE date = ?1", self.table_name);
             self.conn.execute(&delete_sql, [date_str]).expect("Failed to delete");
-            println!("[debug] upsert_day_stats({}): delete only (empty), total={:?}", date_str, t0.elapsed());
+            tdebug!("sqlite", "upsert_day_stats({}): delete only (empty), total={:?}", date_str, t0.elapsed());
             return;
         }
 
@@ -211,8 +212,8 @@ impl DatabaseBackend for SqliteBackend {
         }
         let elapsed = t0.elapsed();
 
-        println!(
-            "[debug] upsert_day_stats({}): upsert={:?} ({} keys)",
+        tdebug!("sqlite",
+            "upsert_day_stats({}): upsert={:?} ({} keys)",
             date_str,
             elapsed,
             key_count,
@@ -298,7 +299,7 @@ impl DatabaseBackend for SqliteBackend {
                     map.insert(date.clone(), data);
                 }
                 if map.is_empty() {
-                    println!("[sqlite] Import JSON contains 0 records, skipping.");
+                    twarn!("sqlite", "Import JSON contains 0 records, skipping.");
                     return;
                 }
                 map
@@ -314,7 +315,7 @@ impl DatabaseBackend for SqliteBackend {
                     }
                 }
                 if map.is_empty() {
-                    println!("[sqlite] Import JSON contains 0 records, skipping.");
+                    twarn!("sqlite", "Import JSON contains 0 records, skipping.");
                     return;
                 }
                 map
@@ -379,8 +380,8 @@ impl DatabaseBackend for SqliteBackend {
 
         tx.commit().expect("Failed to commit transaction");
 
-        println!(
-            "[sqlite] Imported {} date records from JSON (mode: {:?}).",
+        tinfo!("sqlite",
+            "Imported {} date records from JSON (mode: {:?}).",
             total, mode
         );
     }

@@ -7,6 +7,7 @@ use rdev::Event;
 use rdev::EventType;
 use tokio::sync::watch;
 
+use crate::{tinfo, terror};
 use crate::data::MonitorData;
 use crate::maps;
 
@@ -43,9 +44,9 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 }
             }
         }) {
-            eprintln!("rdev listener error: {:?}", e);
+            terror!("rdev", "rdev listener error: {:?}", e);
         }
     });
 
-    println!("rdev listener started.");
+    tinfo!("rdev", "rdev listener started.");
 }

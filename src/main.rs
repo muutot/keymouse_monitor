@@ -13,6 +13,7 @@ mod config;
 mod data;
 mod database;
 mod listener;
+mod log;
 mod maps;
 
 use api::AppState;
@@ -36,7 +37,7 @@ fn should_show_console() -> bool {
 
 async fn shutdown_signal() {
     tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
-    println!("\nShutdown signal received, saving data...");
+    tinfo!("main", "\nShutdown signal received, saving data...");
 }
 
 #[tokio::main]
@@ -46,13 +47,13 @@ async fn main() {
         init_console();
     }
 
-    tracing_subscriber::fmt::init();
-
     let config = Config::load();
 
-    println!("Full-featured keyboard and mouse recorder backend starting...");
-    println!("Backend: {}", config.database.backend);
-    println!("Open index.html in a browser to view.");
+    log::init_logger(&config.log);
+
+    tinfo!("main", "Full-featured keyboard and mouse recorder backend starting...");
+    tinfo!("main", "Backend: {}", config.database.backend);
+    tinfo!("main", "Open index.html in a browser to view.");
 
     // Initialize DB + MonitorData outside tokio runtime context.
     // MongoDB driver uses its own internal Runtime and must NOT be
@@ -108,7 +109,7 @@ async fn main() {
 
     let app = api::create_router(state);
     let addr = format!("0.0.0.0:{}", config.port);
-    println!("Listening on http://{}", addr);
+    tinfo!("main", "Listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app)
@@ -120,5 +121,5 @@ async fn main() {
 
     let mut guard = data.write();
     guard.save_to_db(&db.lock().unwrap());
-    println!("Data saved. Goodbye!");
+    tinfo!("main", "Data saved. Goodbye!");
 }

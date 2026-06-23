@@ -10,6 +10,7 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
+use crate::{tinfo, terror};
 use crate::data::MonitorData;
 use crate::listener::{common, keyboard};
 
@@ -134,7 +135,7 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 lpszClassName: class_name.as_ptr() as _,
             };
             if RegisterClassA(&wc) == 0 {
-                eprintln!("Failed to register window class");
+                terror!("rawinput", "Failed to register window class");
                 return;
             }
 
@@ -150,7 +151,7 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 null_mut(),
             );
             if hwnd.is_null() {
-                eprintln!("Failed to create message-only window");
+                terror!("rawinput", "Failed to create message-only window");
                 return;
             }
 
@@ -161,13 +162,13 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 hwndTarget: hwnd,
             };
             if RegisterRawInputDevices(&rid, 1, std::mem::size_of::<RAWINPUTDEVICE>() as u32) == 0 {
-                eprintln!("Failed to register raw input device");
+                terror!("rawinput", "Failed to register raw input device");
                 return;
             }
 
             KEYBOARD_HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(keyboard_hook), null_mut(), 0);
             if KEYBOARD_HOOK.is_null() {
-                eprintln!("Failed to set keyboard hook");
+                terror!("rawinput", "Failed to set keyboard hook");
                 return;
             }
 
@@ -183,5 +184,5 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
         }
     });
 
-    println!("Raw Input listener started.");
+    tinfo!("rawinput", "Raw Input listener started.");
 }
