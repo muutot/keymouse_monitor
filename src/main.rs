@@ -5,19 +5,13 @@ use std::time::Duration;
 
 use parking_lot::RwLock;
 use tokio::sync::watch;
+use keymouse_monitor::{api, listener, log};
+use keymouse_monitor::tinfo;
 
-mod api;
-mod config;
-mod data;
-mod database;
-mod listener;
-mod log;
-mod maps;
-
-use api::AppState;
-use config::Config;
-use data::MonitorData;
-use database::Database;
+use keymouse_monitor::api::AppState;
+use keymouse_monitor::config::Config;
+use keymouse_monitor::data::MonitorData;
+use keymouse_monitor::database::Database;
 
 #[cfg(windows)]
 static OS_SHUTDOWN: AtomicBool = AtomicBool::new(false);

@@ -26,7 +26,7 @@ pub struct MongoBackend {
     collection_name: String,
 }
 
-fn redact_credentials(uri: &str) -> String {
+pub fn redact_credentials(uri: &str) -> String {
     if let Some(at) = uri.find('@') {
         let scheme_end = uri.find("://").map(|i| i + 3).unwrap_or(0);
         format!("{}<credentials>@{}", &uri[..scheme_end], &uri[at + 1..])
@@ -35,7 +35,7 @@ fn redact_credentials(uri: &str) -> String {
     }
 }
 
-fn build_uri(cfg: &MongoConfig) -> String {
+pub fn build_uri(cfg: &MongoConfig) -> String {
     let mut result = format!("{}://", cfg.protocol);
 
     if let (Some(username), Some(password)) = (&cfg.username, &cfg.password) {
@@ -95,7 +95,7 @@ fn build_uri(cfg: &MongoConfig) -> String {
     result
 }
 
-fn url_encode(s: &str) -> String {
+pub fn url_encode(s: &str) -> String {
     s.chars()
         .map(|c| match c {
             ':' => "%3A".to_string(),

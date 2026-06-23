@@ -5,61 +5,14 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 
-// ── config structs (mirror of main config) ─────────────────────────
-
-#[derive(Deserialize)]
-struct SqliteConfig {
-    path: String,
-}
-
-#[derive(Deserialize)]
-struct MongoConfig {
-    #[serde(default = "default_mongo_protocol")]
-    protocol: String,
-    database: String,
-    #[serde(default)]
-    username: Option<String>,
-    #[serde(default)]
-    password: Option<String>,
-    #[serde(default = "default_auth_source")]
-    auth_source: String,
-    #[serde(default = "default_ssl")]
-    ssl: bool,
-    #[serde(default)]
-    replica_set: Option<String>,
-    #[serde(default)]
-    app_name: Option<String>,
-    #[serde(default)]
-    hosts: Option<Vec<String>>,
-}
-
-fn default_mongo_protocol() -> String {
-    "mongodb".to_string()
-}
-
-fn default_auth_source() -> String {
-    "admin".to_string()
-}
-
-fn default_ssl() -> bool {
-    true
-}
-
-#[derive(Deserialize)]
-struct DatabaseConfig {
-    backend: String,
-    sqlite: SqliteConfig,
-    mongodb: MongoConfig,
-}
+use keymouse_monitor::config::DatabaseConfig;
 
 #[derive(Deserialize)]
 struct Config {
     database: DatabaseConfig,
 }
 
-// ── helpers ────────────────────────────────────────────────────────
-
-fn check_sqlite(cfg: &SqliteConfig) -> bool {
+fn check_sqlite(cfg: &keymouse_monitor::config::SqliteConfig) -> bool {
     print!("\n  file:  {}", cfg.path);
     let start = Instant::now();
 
@@ -67,8 +20,6 @@ fn check_sqlite(cfg: &SqliteConfig) -> bool {
         Ok(conn) => {
             let dur = start.elapsed();
             println!("  \x1b[32m✓ opened\x1b[0m  ({:.1}ms)", dur.as_secs_f64() * 1000.0);
-
-            // run a quick sanity query
             match conn.query_row("SELECT 1", [], |_| Ok(())) {
                 Ok(_) => {
                     let dur = start.elapsed();
@@ -89,106 +40,21 @@ fn check_sqlite(cfg: &SqliteConfig) -> bool {
     }
 }
 
-fn build_uri(cfg: &MongoConfig) -> String {
-    // Build URI from individual config fields
-    let mut result = format!("{}://", cfg.protocol);
-
-    // Add credentials if provided
-    if let (Some(username), Some(password)) = (&cfg.username, &cfg.password) {
-        if !username.is_empty() && !password.is_empty() {
-            let encoded_user = url_encode(username);
-            let encoded_pass = url_encode(password);
-            result.push_str(&format!("{}:{}@", encoded_user, encoded_pass));
-        }
-    }
-
-    // Add hosts
-    if let Some(hosts) = &cfg.hosts {
-        if !hosts.is_empty() {
-            result.push_str(&hosts.join(","));
-        }
-    }
-
-    // Add database
-    let db = &cfg.database;
-    if !db.is_empty() {
-        result.push_str(&format!("/{}", db));
-    }
-
-    // Build query parameters
-    let mut params = Vec::new();
-
-    // SSL
-    if cfg.ssl {
-        params.push("ssl=true".to_string());
-    }
-
-    // Replica set
-    if let Some(replica_set) = &cfg.replica_set {
-        if !replica_set.is_empty() {
-            params.push(format!("replicaSet={}", replica_set));
-        }
-    }
-
-    // Auth source
-    if !cfg.auth_source.is_empty() {
-        params.push(format!("authSource={}", cfg.auth_source));
-    }
-
-    // App name
-    if let Some(app_name) = &cfg.app_name {
-        if !app_name.is_empty() {
-            params.push(format!("appName={}", app_name));
-        }
-    }
-
-    // Add query parameters to URI
-    if !params.is_empty() {
-        result.push_str(&format!("?{}", params.join("&")));
-    }
-
-    result
-}
-
-fn url_encode(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            ':' => "%3A".to_string(),
-            '/' => "%2F".to_string(),
-            '@' => "%40".to_string(),
-            '#' => "%23".to_string(),
-            '?' => "%3F".to_string(),
-            '&' => "%26".to_string(),
-            '=' => "%3D".to_string(),
-            ' ' => "%20".to_string(),
-            _ => c.to_string(),
-        })
-        .collect()
-}
-
 fn redacted_uri(uri: &str) -> String {
-    if let Some(at) = uri.find('@') {
-        let scheme_end = uri.find("://").map(|i| i + 3).unwrap_or(0);
-        format!("{}<credentials>@{}", &uri[..scheme_end], &uri[at + 1..])
-    } else {
-        uri.to_string()
-    }
+    keymouse_monitor::database::redact_credentials(uri)
 }
 
-/// Extract host:port from a mongodb connection URI for TCP pre-check.
 fn extract_hostport(uri: &str) -> Option<String> {
     let after_scheme = if let Some(pos) = uri.find("://") {
         &uri[pos + 3..]
     } else {
         uri
     };
-    // strip credentials user:pass@
     let after_auth = if let Some(pos) = after_scheme.find('@') {
         &after_scheme[pos + 1..]
     } else {
         after_scheme
     };
-    // take up to '/' or '?' or end
     let host_part = after_auth
         .split(|c| c == '/' || c == '?')
         .next()
@@ -196,18 +62,12 @@ fn extract_hostport(uri: &str) -> Option<String> {
     if host_part.is_empty() { None } else { Some(host_part.to_string()) }
 }
 
-fn check_mongodb(cfg: &MongoConfig) -> bool {
-    let raw_uri = build_uri(cfg);
-    let uri = if raw_uri.contains('?') {
-        format!("{}", raw_uri)
-    } else {
-        format!("{}", raw_uri)
-    };
+fn check_mongodb(cfg: &keymouse_monitor::config::MongoConfig) -> bool {
+    let uri = keymouse_monitor::database::build_uri(cfg);
 
     println!("\n  uri:   {}", redacted_uri(&uri));
     let start = Instant::now();
 
-    // ── DNS / TCP pre‑check ────────────────────────────────────
     if let Some(hostport) = extract_hostport(&uri) {
         print!("  dns/tcp: resolving {} ... ", hostport);
         let _ = std::io::stdout().flush();
@@ -215,7 +75,6 @@ fn check_mongodb(cfg: &MongoConfig) -> bool {
             Ok(mut addrs) => {
                 if let Some(addr) = addrs.next() {
                     println!("\x1b[32m{} ✓\x1b[0m", addr.ip());
-                    // TCP connect pre-check
                     print!("  tcp:    connecting ... ");
                     let _ = std::io::stdout().flush();
                     match TcpStream::connect_timeout(&addr, Duration::from_secs(5)) {
@@ -232,7 +91,6 @@ fn check_mongodb(cfg: &MongoConfig) -> bool {
         }
     }
 
-    // ── MongoDB client ─────────────────────────────────────────
     let client = match mongodb::sync::Client::with_uri_str(&uri) {
         Ok(c) => {
             let dur = start.elapsed();
@@ -246,7 +104,6 @@ fn check_mongodb(cfg: &MongoConfig) -> bool {
         }
     };
 
-    // ── Ping ───────────────────────────────────────────────────
     let db = client.database(&cfg.database);
     match db.run_command(mongodb::bson::doc! { "ping": 1 }).run() {
         Ok(_) => {
@@ -261,8 +118,6 @@ fn check_mongodb(cfg: &MongoConfig) -> bool {
         }
     }
 }
-
-// ── main ───────────────────────────────────────────────────────────
 
 fn main() {
     let config_path = std::env::args().nth(1).unwrap_or_else(|| "config.json".to_string());

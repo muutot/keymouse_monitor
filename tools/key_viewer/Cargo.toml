@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+keymouse-monitor = { path = "../.." }
 rdev = "0.5"
 
 [target.'cfg(windows)'.dependencies]
