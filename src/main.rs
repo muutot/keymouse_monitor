@@ -114,19 +114,37 @@ async fn main() {
     tinfo!("main", "Listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
-            tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
-            tinfo!("main", "\nShutdown signal received, saving data...");
-            let _ = shutdown_tx.send(true);
-        })
-        .await
-        .unwrap();
+    let server_handle = tokio::spawn(async move {
+        let _ = axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                std::future::pending::<()>().await
+            })
+            .await;
+    });
+
+    tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+    tinfo!("main", "Shutdown signal received, saving data...");
+    let _ = shutdown_tx.send(true);
+
+    server_handle.abort();
+    let _ = server_handle.await;
 
     // Wait for timer to finish its current save before touching data
     let _ = timer_task.await;
 
-    let mut guard = data.write();
-    guard.save_to_db(&db.lock().unwrap());
+    // Must use spawn_blocking for MongoDB driver (it calls rt.block_on internally)
+    let data_clone = Arc::clone(&data);
+    let db_clone = Arc::clone(&db);
+    tokio::task::spawn_blocking(move || {
+        let mut guard = data_clone.write();
+        guard.save_to_db(&db_clone.lock().unwrap());
+    })
+    .await
+    .unwrap();
+
     tinfo!("main", "Data saved. Goodbye!");
+
+    // Exit immediately to avoid dropping MongoBackend.rt on a tokio worker
+    // during runtime shutdown (which panics). OS reclaims all resources.
+    std::process::exit(0);
 }

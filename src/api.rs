@@ -224,8 +224,8 @@ async fn sse_handler(
     let stream = futures::stream::unfold(
         (data, rx, true, guard),
         |(data, mut rx, first, guard)| async move {
-            if !first {
-                let _ = rx.changed().await;
+            if !first && rx.changed().await.is_err() {
+                return None;
             }
             let json = {
                 let guard = data.read();
