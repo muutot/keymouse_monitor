@@ -92,16 +92,16 @@ unsafe fn process_raw_input(lparam: LPARAM) {
             common::process_event(&EventType::ButtonRelease(Button::Middle), cb);
         }
         if flags & RI_MOUSE_BUTTON_4_DOWN != 0 {
-            common::process_event(&EventType::ButtonPress(Button::Unknown(data as u8)), cb);
+            common::process_event(&EventType::ButtonPress(Button::Unknown(1)), cb);
         }
         if flags & RI_MOUSE_BUTTON_4_UP != 0 {
-            common::process_event(&EventType::ButtonRelease(Button::Unknown(data as u8)), cb);
+            common::process_event(&EventType::ButtonRelease(Button::Unknown(1)), cb);
         }
         if flags & RI_MOUSE_BUTTON_5_DOWN != 0 {
-            common::process_event(&EventType::ButtonPress(Button::Unknown(data as u8)), cb);
+            common::process_event(&EventType::ButtonPress(Button::Unknown(2)), cb);
         }
         if flags & RI_MOUSE_BUTTON_5_UP != 0 {
-            common::process_event(&EventType::ButtonRelease(Button::Unknown(data as u8)), cb);
+            common::process_event(&EventType::ButtonRelease(Button::Unknown(2)), cb);
         }
         if flags & RI_MOUSE_WHEEL != 0 {
             let delta = data as i16;

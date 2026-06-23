@@ -1,14 +1,34 @@
 mod maps;
 
+#[cfg(windows)]
+mod rawinput;
+
 use rdev::{listen, Event, EventType, Key};
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let use_rawinput = args.iter().any(|a| a == "--rawinput" || a == "-r");
+
+    if use_rawinput {
+        #[cfg(windows)]
+        {
+            rawinput::start();
+            return;
+        }
+        #[cfg(not(windows))]
+        {
+            eprintln!("--rawinput is only supported on Windows");
+            std::process::exit(1);
+        }
+    }
+
     println!("Key Viewer - 按键虚拟键码检测工具");
-    println!("按下任意按键查看信息，按 Ctrl+C 退出\n");
+    println!("按下任意按键查看信息，按 Ctrl+C 退出");
+    println!("使用 --rawinput 或 -r 参数启动 Raw Input 模式\n");
 
     println!(
-        "{:<7} {:<30} {:<22} {:<10} {}",
-        "类型", "rdev Key 枚举值", "映射名称", "VK 码", "事件名"
+        "{:<7} {:<30} {:<22} {:<10} 事件名",
+        "类型", "rdev Key 枚举值", "映射名称", "VK 码"
     );
     println!("{}", "-".repeat(100));
 
