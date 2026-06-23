@@ -8,6 +8,7 @@ use tokio::sync::watch;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 
+use crate::{tinfo, terror};
 use crate::data::MonitorData;
 use crate::listener::{common, keyboard};
 
@@ -90,13 +91,13 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
 
             KEYBOARD_HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(hook_callback), null_mut(), 0);
             if KEYBOARD_HOOK.is_null() {
-                eprintln!("Failed to set keyboard hook");
+                terror!("native", "Failed to set keyboard hook");
                 return;
             }
 
             MOUSE_HOOK = SetWindowsHookExA(WH_MOUSE_LL, Some(hook_callback), null_mut(), 0);
             if MOUSE_HOOK.is_null() {
-                eprintln!("Failed to set mouse hook");
+                terror!("native", "Failed to set mouse hook");
                 return;
             }
 
@@ -105,5 +106,5 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
         }
     });
 
-    println!("Native Windows listener started.");
+    tinfo!("native", "Native Windows listener started.");
 }
