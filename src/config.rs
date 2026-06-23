@@ -5,12 +5,19 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SqliteConfig {
     pub path: String,
+    #[serde(default = "default_sqlite_table")]
+    pub table: String,
+}
+
+fn default_sqlite_table() -> String {
+    "daily_stats".to_string()
 }
 
 impl Default for SqliteConfig {
     fn default() -> Self {
         Self {
             path: "monitor.sqlite".to_string(),
+            table: default_sqlite_table(),
         }
     }
 }
@@ -38,6 +45,12 @@ pub struct MongoConfig {
     pub connect_timeout_ms: u64,
     #[serde(default = "default_server_selection_timeout_ms")]
     pub server_selection_timeout_ms: u64,
+    #[serde(default = "default_mongo_collection")]
+    pub collection: String,
+}
+
+fn default_mongo_collection() -> String {
+    "daily_stats".to_string()
 }
 
 fn default_mongo_protocol() -> String {
@@ -74,6 +87,7 @@ impl Default for MongoConfig {
             hosts: None,
             connect_timeout_ms: default_connect_timeout_ms(),
             server_selection_timeout_ms: default_server_selection_timeout_ms(),
+            collection: default_mongo_collection(),
         }
     }
 }
