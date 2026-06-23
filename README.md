@@ -1,4 +1,4 @@
-# Key Monitor v2.0.0
+# Key Monitor v2.0.1
 
 Real-time keyboard and mouse click statistics with a visual UI. Backend records input events via Windows hooks or rdev, stores counts in SQLite or MongoDB, and serves a live-updating HTML frontend.
 
@@ -123,7 +123,7 @@ On non-Windows only `"rdev"` is available and selected automatically. Unknown va
 | `GET` | `/events` | SSE stream — pushes full count JSON on each key/button press |
 | `GET` | `/api/export` | Full database export as JSON |
 | `POST` | `/api/import?mode=overwrite\|merge` | Import JSON data from export format |
-| `GET` | `/api/version` | `{"version": "2.0.0", "name": "keymouse-monitor"}` |
+| `GET` | `/api/version` | `{"version": "2.0.1", "name": "keymouse-monitor"}` |
 
 ### SSE format (`/events`)
 
@@ -222,6 +222,6 @@ CI (GitHub Actions) builds on push to `main` that modifies the `version` file; a
 ├── build.rs                  # Auto-generates app.ico from SVG
 ├── CHANGELOG.md              # Version history
 ├── config.json               # Optional config file
-├── version                   # Version string for CI (2.0.0)
+├── version                   # Version string for CI (2.0.1)
 └── Cargo.toml
 ```
