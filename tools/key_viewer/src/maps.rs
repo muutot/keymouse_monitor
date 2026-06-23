@@ -130,7 +130,7 @@ pub fn button_name(button: &Button) -> String {
     .to_string()
 }
 
-fn vk_name(vk: u32) -> Option<&'static str> {
+pub fn vk_name(vk: u32) -> Option<&'static str> {
     match vk {
         48 => Some("0"), 49 => Some("1"), 50 => Some("2"), 51 => Some("3"),
         52 => Some("4"), 53 => Some("5"), 54 => Some("6"), 55 => Some("7"),
