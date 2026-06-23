@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use futures::TryStreamExt;
 use mongodb::bson::doc;
-use mongodb::options::{FindOptions, UpdateOptions};
+use mongodb::options::{AggregateOptions, FindOptions, UpdateOptions};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
@@ -201,18 +201,24 @@ impl DatabaseBackend for MongoBackend {
 
     fn get_stats_for_range(&self, start_date: &str, end_date: &str) -> HashMap<String, u64> {
         let collection = self.collection();
-        let filter = doc! {
-            "date": { "$gte": start_date, "$lte": end_date }
-        };
+        let pipeline = vec![
+            doc! { "$match": { "date": { "$gte": start_date, "$lte": end_date } } },
+            doc! { "$project": { "kv": { "$objectToArray": "$data" } } },
+            doc! { "$unwind": "$kv" },
+            doc! { "$group": { "_id": "$kv.k", "total": { "$sum": "$kv.v" } } },
+        ];
         self.rt.block_on(async {
             let mut cursor = collection
-                .find(filter, None)
+                .aggregate(pipeline, AggregateOptions::builder().build())
                 .await
-                .expect("Failed to query range");
+                .expect("Failed to aggregate range");
             let mut aggregated = HashMap::new();
-            while let Some(stat) = cursor.try_next().await.unwrap_or(None) {
-                for (key, value) in stat.data {
-                    *aggregated.entry(key).or_insert(0) += value;
+            while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
+                if let (Some(key), Some(value)) = (
+                    doc.get_str("_id").ok(),
+                    doc.get_i64("total").ok().map(|v| v as u64),
+                ) {
+                    aggregated.insert(key.to_string(), value);
                 }
             }
             aggregated
