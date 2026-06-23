@@ -218,24 +218,36 @@ impl DatabaseBackend for MongoBackend {
 
             let mut aggregated = HashMap::new();
             let mut count = 0u64;
-            while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
+            let mut network_total = std::time::Duration::ZERO;
+            let mut process_total = std::time::Duration::ZERO;
+            loop {
+                let fetch_start = Instant::now();
+                let result = cursor.try_next().await.unwrap_or(None);
+                network_total += fetch_start.elapsed();
+
+                let Some(doc) = result else { break };
                 count += 1;
+
+                let proc_start = Instant::now();
                 if let (Some(key), Some(value)) = (
                     doc.get_str("_id").ok(),
                     doc.get_i64("total").ok().map(|v| v as u64),
                 ) {
                     aggregated.insert(key.to_string(), value);
                 }
+                process_total += proc_start.elapsed();
             }
             let t2 = Instant::now();
 
             println!(
                 "[debug] get_stats_for_range(start={}, end={}): \
-                 aggregate={:?}, iterate={:?} ({} docs), total={:?}",
+                 aggregate(server)={:?}, iterate(network)={:?}, \
+                 iterate(process)={:?} ({} docs), total={:?}",
                 start_date,
                 end_date,
                 t1 - t0,
-                t2 - t1,
+                network_total,
+                process_total,
                 count,
                 t2 - t0,
             );
