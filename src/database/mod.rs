@@ -111,6 +111,7 @@ impl Database {
         Self::new_sqlite(
             &SqliteConfig {
                 path: db_file.to_string(),
+                table: "daily_stats".to_string(),
             },
             true,
         )

@@ -34,6 +34,11 @@ fn should_show_console() -> bool {
     args.iter().any(|a| a == "--console" || a == "-c")
 }
 
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+    println!("\nShutdown signal received, saving data...");
+}
+
 #[tokio::main]
 async fn main() {
     #[cfg(windows)]
@@ -78,10 +83,18 @@ async fn main() {
     let save_interval = config.save_interval_secs;
     let data_for_timer = Arc::clone(&data);
     let db_for_timer = Arc::clone(&db);
-    tokio::task::spawn_blocking(move || loop {
-        std::thread::sleep(Duration::from_secs(save_interval));
-        let mut guard = data_for_timer.write();
-        guard.save_to_db(&db_for_timer.lock().unwrap());
+    let timer_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(save_interval));
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            let data = Arc::clone(&data_for_timer);
+            let db = Arc::clone(&db_for_timer);
+            let _ = tokio::task::spawn_blocking(move || {
+                let mut guard = data.write();
+                guard.save_to_db(&db.lock().unwrap());
+            }).await;
+        }
     });
 
     let app = api::create_router(state);
@@ -89,5 +102,14 @@ async fn main() {
     println!("Listening on http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+
+    timer_task.abort();
+
+    let mut guard = data.write();
+    guard.save_to_db(&db.lock().unwrap());
+    println!("Data saved. Goodbye!");
 }

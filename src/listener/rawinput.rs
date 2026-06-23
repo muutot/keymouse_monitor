@@ -1,4 +1,4 @@
-use std::ptr::null_mut;
+use std::ptr::{null_mut, read_unaligned};
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
@@ -59,7 +59,7 @@ unsafe fn process_raw_input(lparam: LPARAM) {
         return;
     }
 
-    let raw = &*(buf.as_ptr() as *const RAWINPUT);
+    let raw: RAWINPUT = read_unaligned(buf.as_ptr() as *const RAWINPUT);
     if raw.header.dwType != RIM_TYPEMOUSE {
         return;
     }

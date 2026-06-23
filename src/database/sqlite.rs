@@ -9,6 +9,7 @@ use super::{BackendType, DatabaseBackend};
 
 pub struct SqliteBackend {
     conn: Connection,
+    table_name: String,
     use_server_aggregation: bool,
 }
 
@@ -19,22 +20,48 @@ impl SqliteBackend {
             .expect("Failed to set WAL mode");
         conn.execute_batch("PRAGMA synchronous=NORMAL")
             .expect("Failed to set synchronous mode");
-        let backend = Self { conn, use_server_aggregation };
+        let table_name = cfg.table.clone();
+        let backend = Self { conn, table_name, use_server_aggregation };
         backend.init_db();
         backend
     }
 
     fn init_db(&self) {
         println!("[sqlite] Checking database table structure...");
-        self.conn
-            .execute_batch(
-                "CREATE TABLE IF NOT EXISTS daily_stats (
-                date TEXT PRIMARY KEY,
-                data TEXT NOT NULL
-            )",
-            )
-            .expect("Failed to create table");
+        let sql = format!(
+            "CREATE TABLE IF NOT EXISTS {} (
+            date TEXT PRIMARY KEY,
+            data TEXT NOT NULL
+        )",
+            self.table_name
+        );
+        self.conn.execute_batch(&sql).expect("Failed to create table");
         println!("[sqlite] Database initialization complete.");
+    }
+
+    fn select_by_day(&self) -> String {
+        format!("SELECT data FROM {} WHERE date = ?1", self.table_name)
+    }
+
+    fn select_by_range_agg(&self) -> String {
+        format!(
+            "SELECT j.key, SUM(j.value) FROM {}, \
+             json_each({}.data) AS j \
+             WHERE date BETWEEN ?1 AND ?2 GROUP BY j.key",
+            self.table_name, self.table_name
+        )
+    }
+
+    fn select_by_range(&self) -> String {
+        format!("SELECT data FROM {} WHERE date BETWEEN ?1 AND ?2", self.table_name)
+    }
+
+    fn upsert_sql(&self) -> String {
+        format!("INSERT OR REPLACE INTO {} (date, data) VALUES (?1, ?2)", self.table_name)
+    }
+
+    fn select_all(&self) -> String {
+        format!("SELECT date, data FROM {} ORDER BY date", self.table_name)
     }
 }
 
@@ -46,7 +73,7 @@ impl DatabaseBackend for SqliteBackend {
     fn get_stats_for_day(&self, date_str: &str) -> HashMap<String, u64> {
         let mut stmt = self
             .conn
-            .prepare_cached("SELECT data FROM daily_stats WHERE date = ?1")
+            .prepare_cached(&self.select_by_day())
             .expect("Failed to prepare SELECT statement");
         let result: Option<String> = stmt.query_row([date_str], |row| row.get(0)).ok();
         match result {
@@ -63,11 +90,7 @@ impl DatabaseBackend for SqliteBackend {
         if self.use_server_aggregation {
             let mut stmt = self
                 .conn
-                .prepare_cached(
-                    "SELECT j.key, SUM(j.value) FROM daily_stats, \
-                     json_each(daily_stats.data) AS j \
-                     WHERE date BETWEEN ?1 AND ?2 GROUP BY j.key",
-                )
+                .prepare_cached(&self.select_by_range_agg())
                 .expect("Failed to prepare aggregation SELECT");
             let results = stmt
                 .query_map([start_date, end_date], |row| {
@@ -86,7 +109,7 @@ impl DatabaseBackend for SqliteBackend {
         } else {
             let mut stmt = self
                 .conn
-                .prepare_cached("SELECT data FROM daily_stats WHERE date BETWEEN ?1 AND ?2")
+                .prepare_cached(&self.select_by_range())
                 .expect("Failed to prepare range SELECT");
             let results = stmt
                 .query_map([start_date, end_date], |row| row.get::<_, String>(0))
@@ -107,17 +130,14 @@ impl DatabaseBackend for SqliteBackend {
     fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
         let json_str = serde_json::to_string(data).expect("Failed to serialize stats to JSON");
         self.conn
-            .execute(
-                "INSERT OR REPLACE INTO daily_stats (date, data) VALUES (?1, ?2)",
-                [date_str, &json_str],
-            )
+            .execute(&self.upsert_sql(), [date_str, &json_str])
             .expect("Failed to upsert daily stats");
     }
 
     fn export_to_json(&self) -> String {
         let mut stmt = self
             .conn
-            .prepare_cached("SELECT date, data FROM daily_stats ORDER BY date")
+            .prepare_cached(&self.select_all())
             .expect("Failed to prepare export SELECT");
         let results = stmt
             .query_map([], |row| {

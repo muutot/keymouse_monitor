@@ -22,6 +22,7 @@ pub struct MongoBackend {
     rt: Runtime,
     client: mongodb::Client,
     db_name: String,
+    collection_name: String,
     use_server_aggregation: bool,
 }
 
@@ -136,7 +137,8 @@ impl MongoBackend {
         });
 
         let db_name = cfg.database.clone();
-        let backend = Self { rt, client, db_name, use_server_aggregation };
+        let collection_name = cfg.collection.clone();
+        let backend = Self { rt, client, db_name, collection_name, use_server_aggregation };
         if let Err(e) = backend.init_db() {
             eprintln!("\n\x1b[31m⚠ MongoDB connection failed:\x1b[0m");
             eprintln!("  {e}");
@@ -160,7 +162,7 @@ impl MongoBackend {
         match ping_result {
             Ok(_) => {
                 println!("[mongodb] Connection established.");
-                let collection = db.collection::<DailyStat>("daily_stats");
+                let collection = db.collection::<DailyStat>(&self.collection_name);
                 let index = mongodb::IndexModel::builder()
                     .keys(doc! { "date": 1 })
                     .build();
@@ -175,7 +177,7 @@ impl MongoBackend {
     }
 
     fn collection(&self) -> mongodb::Collection<DailyStat> {
-        self.client.database(&self.db_name).collection("daily_stats")
+        self.client.database(&self.db_name).collection(&self.collection_name)
     }
 }
 
