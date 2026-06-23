@@ -85,6 +85,7 @@ async fn main() {
     let db_for_timer = Arc::clone(&db);
     let timer_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(save_interval));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         interval.tick().await;
         loop {
             interval.tick().await;
