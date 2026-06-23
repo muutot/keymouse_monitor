@@ -301,12 +301,20 @@ impl DatabaseBackend for MongoBackend {
 
     fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
         let raw = self.raw_collection();
+        let t0 = Instant::now();
+        let key_count = data.len();
+        let is_empty = data.is_empty();
         self.rt.block_on(async {
             raw.delete_many(doc! { "date": date_str }, None)
                 .await
                 .expect("Failed to delete existing day stats");
+            let t1 = Instant::now();
 
-            if data.is_empty() {
+            if is_empty {
+                println!(
+                    "[debug] upsert_day_stats({}): delete={:?} (empty), total={:?}",
+                    date_str, t1 - t0, t1 - t0,
+                );
                 return;
             }
 
@@ -324,6 +332,16 @@ impl DatabaseBackend for MongoBackend {
             raw.insert_many(docs, None)
                 .await
                 .expect("Failed to insert day stats");
+            let t2 = Instant::now();
+
+            println!(
+                "[debug] upsert_day_stats({}): delete={:?} + insert={:?} = {:?} ({} keys)",
+                date_str,
+                t1 - t0,
+                t2 - t1,
+                t2 - t0,
+                key_count,
+            );
         });
     }
 

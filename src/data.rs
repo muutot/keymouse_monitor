@@ -63,34 +63,41 @@ impl MonitorData {
         }
     }
 
-    pub fn save_to_db(&mut self, db: &Database) {
+    /// Merges incremental into base and returns (today, snapshot) for the caller to save.
+    /// The lock should be released before calling db.upsert_day_stats() with the returned data.
+    pub fn prepare_save(&mut self) -> Option<(String, HashMap<String, u64>)> {
         let today_str = Local::now().format("%Y-%m-%d").to_string();
 
-        if self.incremental_counts.is_empty() {
-            if self.today != today_str {
-                self.base_counts.clear();
-                self.today = today_str;
-            }
-            return;
-        }
-
         if self.today != today_str {
-            // Day rolled over: save yesterday's accumulated data to yesterday
-            db.upsert_day_stats(&self.today, &self.base_counts);
-            self.base_counts.clear();
-            self.today = today_str;
+            // Rollover: return yesterday's data, reset for today
+            let yesterday = std::mem::take(&mut self.base_counts);
+            let old_today = std::mem::replace(&mut self.today, today_str);
+            // Move today's incremental into the now-empty base for next save
+            for (key, value) in self.incremental_counts.drain() {
+                *self.base_counts.entry(key).or_insert(0) += value;
+            }
+            return Some((old_today, yesterday));
         }
 
-        // Merge today's incremental into base and save
+        if self.incremental_counts.is_empty() {
+            return None;
+        }
+
+        // Normal save: drain incremental into base, return snapshot
         for (key, value) in self.incremental_counts.drain() {
             *self.base_counts.entry(key).or_insert(0) += value;
         }
-        db.upsert_day_stats(&self.today, &self.base_counts);
+        Some((self.today.clone(), self.base_counts.clone()))
+    }
 
-        println!(
-            "Data merged and saved to database. Time: {}",
-            Local::now().format("%Y-%m-%d %H:%M:%S")
-        );
+    pub fn save_to_db(&mut self, db: &Database) {
+        if let Some((date, counts)) = self.prepare_save() {
+            db.upsert_day_stats(&date, &counts);
+            // On rollover, also save today's data if any incremental was moved
+            if date != self.today && !self.base_counts.is_empty() {
+                db.upsert_day_stats(&self.today, &self.base_counts);
+            }
+        }
     }
 
 }
@@ -223,17 +230,16 @@ use crate::database::Database;
         data.today = "2000-01-01".to_string();
         data.increase_count("new_day");
 
+        // save_to_db handles both saves: flushes yesterday, persists today
         data.save_to_db(&db);
 
         assert_eq!(data.today, today);
         assert!(data.incremental_counts.is_empty());
-        // Today's incremental was merged into fresh base after rollover
         assert_eq!(data.base_counts.get("new_day"), Some(&1), "new day's data in base");
         assert!(data.base_counts.get("old").is_none(), "yesterday's data cleared on rollover");
 
         let saved = db.get_stats_for_day(&today);
         assert_eq!(saved.get("new_day"), Some(&1), "new data in today's db entry");
-        // Yesterday's final data was saved separately to yesterday's date
         let old_saved = db.get_stats_for_day("2000-01-01");
         assert_eq!(old_saved.get("old"), Some(&99), "old base saved to yesterday's date");
     }
