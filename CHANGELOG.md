@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0]
+
+### Features
+- Differential DB saves: `update_mode` config (diff/full) controls whether periodic
+  saves send only changed keys (diff) or the full snapshot; SQLite uses `ON CONFLICT
+  DO UPDATE`, MongoDB uses `$inc` upsert
+
 ## [2.0.1]
 
 ### Bug Fixes
