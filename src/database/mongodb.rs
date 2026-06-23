@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Document};
@@ -8,8 +8,7 @@ use mongodb::options::{DeleteManyModel, InsertOneModel, WriteModel};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
-use crate::{tinfo, twarn, tdebug};
-use crate::config::MongoConfig;
+use crate::{tinfo, twarn, tdebug, config::MongoConfig};
 
 use super::{BackendType, DatabaseBackend, ImportMode};
 
@@ -192,7 +191,7 @@ impl MongoBackend {
                 let data = old_doc
                     .get_document("data")
                     .ok()
-                    .map(|d| d.clone());
+                    .cloned();
                 if let (Some(date), Some(data)) = (date, data) {
                     for (key, value) in data.iter() {
                         if let Some(count) = value.as_i64() {
@@ -264,8 +263,8 @@ impl DatabaseBackend for MongoBackend {
 
             let mut aggregated = HashMap::new();
             let mut count = 0u64;
-            let mut network_total = std::time::Duration::ZERO;
-            let mut process_total = std::time::Duration::ZERO;
+            let mut network_total = Duration::ZERO;
+            let mut process_total = Duration::ZERO;
             loop {
                 let fetch_start = Instant::now();
                 let result = cursor.try_next().await.unwrap_or(None);

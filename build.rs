@@ -48,8 +48,6 @@ END
 
 #[cfg(windows)]
 fn render_svg_to_ico(svg_path: &std::path::Path) -> Option<Vec<u8>> {
-    use std::io::Write;
-
     let svg_data = std::fs::read(svg_path).ok()?;
     let opt = resvg::usvg::Options::default();
     let tree = resvg::usvg::Tree::from_data(&svg_data, &opt).ok()?;
@@ -82,6 +80,7 @@ fn render_svg_to_ico(svg_path: &std::path::Path) -> Option<Vec<u8>> {
 }
 
 #[cfg(windows)]
+#[allow(clippy::manual_checked_ops)]
 fn un_premultiply(data: &[u8]) -> Vec<u8> {
     let mut out = data.to_vec();
     for px in out.chunks_exact_mut(4) {

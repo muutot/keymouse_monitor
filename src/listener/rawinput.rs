@@ -1,6 +1,7 @@
+use std::mem;
 use std::ptr::{null_mut, read_unaligned};
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+use std::sync::{atomic::AtomicUsize, Arc};
+use std::thread;
 
 use parking_lot::RwLock;
 use rdev::{Button, EventType};
@@ -10,9 +11,7 @@ use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::{tinfo, terror};
-use crate::data::MonitorData;
-use crate::listener::{common, keyboard};
+use crate::{tinfo, terror, data::MonitorData, listener::{common, keyboard}};
 
 const RAW_BUF_SIZE: usize = 64;
 
@@ -54,9 +53,9 @@ unsafe fn process_raw_input(lparam: LPARAM) {
         RID_INPUT,
         buf.as_mut_ptr() as *mut _,
         &mut size,
-        std::mem::size_of::<RAWINPUTHEADER>() as u32,
+        size_of::<RAWINPUTHEADER>() as u32,
     );
-    if written == u32::MAX || written < std::mem::size_of::<RAWINPUTHEADER>() as u32 {
+    if written == u32::MAX || written < size_of::<RAWINPUTHEADER>() as u32 {
         return;
     }
 
@@ -106,80 +105,101 @@ unsafe fn process_raw_input(lparam: LPARAM) {
         }
         if flags & RI_MOUSE_WHEEL != 0 {
             let delta = data as i16;
-            common::process_event(&EventType::Wheel { delta_x: 0, delta_y: (delta / 120) as i64 }, cb);
+            common::process_event(
+                &EventType::Wheel {
+                    delta_x: 0,
+                    delta_y: (delta / 120) as i64,
+                },
+                cb,
+            );
         }
         if flags & RI_MOUSE_HWHEEL != 0 {
             let delta = data as i16;
-            common::process_event(&EventType::Wheel { delta_x: (delta / 120) as i64, delta_y: 0 }, cb);
+            common::process_event(
+                &EventType::Wheel {
+                    delta_x: (delta / 120) as i64,
+                    delta_y: 0,
+                },
+                cb,
+            );
         }
     }
 }
 
-pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, client_count: Arc<AtomicUsize>) {
-    std::thread::spawn(move || {
-        unsafe {
-            CB = Some(common::CallbackData { data, change_tx, client_count });
+pub fn start(
+    data: Arc<RwLock<MonitorData>>,
+    change_tx: watch::Sender<()>,
+    client_count: Arc<AtomicUsize>,
+) {
+    thread::spawn(move || unsafe {
+        CB = Some(common::CallbackData {
+            data,
+            change_tx,
+            client_count,
+        });
 
-            let class_name = b"KeyMouseMonWndClass\0";
-            let hinst = GetModuleHandleA(null_mut());
-            let wc = WNDCLASSA {
-                style: 0,
-                lpfnWndProc: Some(DefWindowProcA),
-                cbClsExtra: 0,
-                cbWndExtra: 0,
-                hInstance: hinst,
-                hIcon: null_mut(),
-                hCursor: null_mut(),
-                hbrBackground: null_mut(),
-                lpszMenuName: null_mut(),
-                lpszClassName: class_name.as_ptr() as _,
-            };
-            if RegisterClassA(&wc) == 0 {
-                terror!("rawinput", "Failed to register window class");
-                return;
-            }
+        let class_name = b"KeyMouseMonWndClass\0";
+        let hinst = GetModuleHandleA(null_mut());
+        let wc = WNDCLASSA {
+            style: 0,
+            lpfnWndProc: Some(DefWindowProcA),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: hinst,
+            hIcon: null_mut(),
+            hCursor: null_mut(),
+            hbrBackground: null_mut(),
+            lpszMenuName: null_mut(),
+            lpszClassName: class_name.as_ptr() as _,
+        };
+        if RegisterClassA(&wc) == 0 {
+            terror!("rawinput", "Failed to register window class");
+            return;
+        }
 
-            let hwnd = CreateWindowExA(
-                0,
-                class_name.as_ptr() as _,
-                null_mut(),
-                0,
-                0, 0, 0, 0,
-                HWND_MESSAGE,
-                null_mut(),
-                hinst,
-                null_mut(),
-            );
-            if hwnd.is_null() {
-                terror!("rawinput", "Failed to create message-only window");
-                return;
-            }
+        let hwnd = CreateWindowExA(
+            0,
+            class_name.as_ptr() as _,
+            null_mut(),
+            0,
+            0,
+            0,
+            0,
+            0,
+            HWND_MESSAGE,
+            null_mut(),
+            hinst,
+            null_mut(),
+        );
+        if hwnd.is_null() {
+            terror!("rawinput", "Failed to create message-only window");
+            return;
+        }
 
-            let rid = RAWINPUTDEVICE {
-                usUsagePage: 0x01,
-                usUsage: 0x02,
-                dwFlags: RIDEV_INPUTSINK | RIDEV_NOLEGACY,
-                hwndTarget: hwnd,
-            };
-            if RegisterRawInputDevices(&rid, 1, std::mem::size_of::<RAWINPUTDEVICE>() as u32) == 0 {
-                terror!("rawinput", "Failed to register raw input device");
-                return;
-            }
+        let rid = RAWINPUTDEVICE {
+            usUsagePage: 0x01,
+            usUsage: 0x02,
+            dwFlags: RIDEV_INPUTSINK | RIDEV_NOLEGACY,
+            hwndTarget: hwnd,
+        };
+        if RegisterRawInputDevices(&rid, 1, size_of::<RAWINPUTDEVICE>() as u32) == 0 {
+            terror!("rawinput", "Failed to register raw input device");
+            return;
+        }
 
-            KEYBOARD_HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(keyboard_hook), null_mut(), 0);
-            if KEYBOARD_HOOK.is_null() {
-                terror!("rawinput", "Failed to set keyboard hook");
-                return;
-            }
+        KEYBOARD_HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(keyboard_hook), null_mut(), 0);
+        if KEYBOARD_HOOK.is_null() {
+            terror!("rawinput", "Failed to set keyboard hook");
+            return;
+        }
 
-            let mut msg = std::mem::zeroed();
-            while GetMessageA(&mut msg, null_mut(), 0, 0) != 0 {
-                if msg.message == WM_INPUT {
-                    process_raw_input(msg.lParam);
-                } else {
-                    TranslateMessage(&msg);
-                    DispatchMessageA(&msg);
-                }
+        let mut msg = mem::zeroed();
+        while GetMessageA(&mut msg, null_mut(), 0, 0) != 0 {
+            if msg.message == WM_INPUT {
+                process_raw_input(msg.lParam);
+            } else {
+                TranslateMessage(&msg);
+                DispatchMessageA(&msg);
             }
         }
     });

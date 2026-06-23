@@ -1,6 +1,7 @@
+use std::mem;
 use std::ptr::null_mut;
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, atomic::AtomicUsize};
+use std::thread;
 
 use parking_lot::RwLock;
 use rdev::{Button, EventType};
@@ -8,9 +9,7 @@ use tokio::sync::watch;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 
-use crate::{tinfo, terror};
-use crate::data::MonitorData;
-use crate::listener::{common, keyboard};
+use crate::{tinfo, terror, data::MonitorData, listener::{common, keyboard}};
 
 extern "system" {
     fn CallNextHookEx(hhk: HHOOK, code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
@@ -85,7 +84,7 @@ unsafe fn msg_to_event(wparam: WPARAM, lparam: LPARAM) -> Option<EventType> {
 }
 
 pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, client_count: Arc<AtomicUsize>) {
-    std::thread::spawn(move || {
+    thread::spawn(move || {
         unsafe {
             CB = Some(common::CallbackData { data, change_tx, client_count });
 
@@ -101,7 +100,7 @@ pub fn start(data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, clien
                 return;
             }
 
-            let mut msg = std::mem::zeroed();
+            let mut msg = mem::zeroed();
             while GetMessageA(&mut msg, null_mut(), 0, 0) != 0 {}
         }
     });

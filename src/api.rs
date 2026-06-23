@@ -1,16 +1,13 @@
+use std::collections::HashMap;
 use std::convert::Infallible;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}};
+use std::time::Instant;
 
-use axum::extract::Query;
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::sse::{Event, Sse};
-use axum::response::Json;
-use axum::Router;
-use axum::routing::{get, post};
-use chrono::NaiveDate;
+use axum::{
+    Router, extract::{Query, State}, http::StatusCode,
+    response::{Json, sse::{Event, Sse}}, routing::{get, post},
+};
+use chrono::{Local, NaiveDate};
 use futures::stream::Stream;
 use parking_lot::RwLock;
 use serde::Deserialize;
@@ -19,12 +16,7 @@ use tokio::sync::watch;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::ServeDir;
 
-use chrono::Local;
-use std::collections::HashMap;
-
-use crate::tinfo;
-use crate::data::MonitorData;
-use crate::database::{Database, ImportMode};
+use crate::{tinfo, data::MonitorData, database::{Database, ImportMode}};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -176,7 +168,7 @@ async fn import_handler(
     let db = state.db.clone();
     let data = state.data.clone();
     let today = Local::now().format("%Y-%m-%d").to_string();
-    let start = std::time::Instant::now();
+    let start = Instant::now();
     tokio::task::spawn_blocking(move || {
         let today_counts: HashMap<String, u64> = serde_json::from_str(&json_str)
             .ok()

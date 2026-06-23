@@ -1,9 +1,9 @@
 use std::collections::HashMap;
+use std::mem;
 
 use chrono::Local;
 
-use crate::tinfo;
-use crate::database::{Database, ImportMode};
+use crate::{tinfo, database::{Database, ImportMode}};
 
 pub struct MonitorData {
     pub base_counts: HashMap<String, u64>,
@@ -71,8 +71,8 @@ impl MonitorData {
 
         if self.today != today_str {
             // Rollover: return yesterday's data, reset for today
-            let yesterday = std::mem::take(&mut self.base_counts);
-            let old_today = std::mem::replace(&mut self.today, today_str);
+            let yesterday = mem::take(&mut self.base_counts);
+            let old_today = mem::replace(&mut self.today, today_str);
             // Move today's incremental into the now-empty base for next save
             for (key, value) in self.incremental_counts.drain() {
                 *self.base_counts.entry(key).or_insert(0) += value;
@@ -106,7 +106,6 @@ impl MonitorData {
 #[cfg(test)]
 mod tests {
     use super::*;
-use crate::database::Database;
 
     fn make_empty() -> MonitorData {
         let today = Local::now().format("%Y-%m-%d").to_string();
