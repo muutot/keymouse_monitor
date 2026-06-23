@@ -161,6 +161,7 @@ async fn import_handler(
     let db = state.db.clone();
     let data = state.data.clone();
     let today = Local::now().format("%Y-%m-%d").to_string();
+    let start = std::time::Instant::now();
     tokio::task::spawn_blocking(move || {
         let today_counts: HashMap<String, u64> = serde_json::from_str(&json_str)
             .ok()
@@ -186,7 +187,8 @@ async fn import_handler(
             Json(json!({"error": "Database import failed."})),
         )
     })?;
-    Ok(Json(serde_json::json!({ "status": "ok", "message": "Import successful", "mode": format!("{:?}", mode) })))
+    let duration_ms = start.elapsed().as_millis();
+    Ok(Json(serde_json::json!({ "status": "ok", "message": "Import successful", "mode": format!("{:?}", mode), "duration_ms": duration_ms })))
 }
 
 async fn version_handler() -> Json<Value> {
