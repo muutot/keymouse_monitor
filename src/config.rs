@@ -32,19 +32,19 @@ pub struct MongoConfig {
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
-    #[serde(default = "default_auth_source")]
+    #[serde(default = "default_auth_source", rename = "authSource")]
     pub auth_source: String,
     #[serde(default = "default_ssl")]
     pub ssl: bool,
-    #[serde(default)]
+    #[serde(default, rename = "replicaSet")]
     pub replica_set: Option<String>,
-    #[serde(default)]
+    #[serde(default, rename = "appName")]
     pub app_name: Option<String>,
     #[serde(default)]
     pub hosts: Option<Vec<String>>,
-    #[serde(default = "default_connect_timeout_ms")]
+    #[serde(default = "default_connect_timeout_ms", rename = "connectTimeoutMs")]
     pub connect_timeout_ms: u64,
-    #[serde(default = "default_server_selection_timeout_ms")]
+    #[serde(default = "default_server_selection_timeout_ms", rename = "serverSelectionTimeoutMs")]
     pub server_selection_timeout_ms: u64,
     #[serde(default = "default_mongo_collection")]
     pub collection: String,

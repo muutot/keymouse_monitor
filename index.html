@@ -1044,7 +1044,31 @@
 
 <div class="top-n-area">
     <div class="top-n-keys" id="top-n-keys">
-        <!-- 此处内容将由JavaScript动态生成 -->
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
+        <div class="top-key"><span class="key-name">&nbsp;</span><span class="key-count">&nbsp;</span></div>
     </div>
 </div>
 </div>
@@ -1120,8 +1144,10 @@
       el.className = 'top-key';
       const nameEl = document.createElement('span');
       nameEl.className = 'key-name';
+      nameEl.innerHTML = '&nbsp;';
       const countEl = document.createElement('span');
       countEl.className = 'key-count';
+      countEl.innerHTML = '&nbsp;';
       el.appendChild(nameEl);
       el.appendChild(countEl);
       topNContainer.appendChild(el);
@@ -1187,7 +1213,7 @@
    * Handles incoming live data from SSE and updates only the keys that have changed.
    */
   function handleLiveData(currentData) {
-    let animate = true;
+    let animate = Object.keys(lastLiveData).length > 0;
     if (isHistory) {
       isHistory = false;
       animate = false;
@@ -1262,9 +1288,6 @@
   }
 
   /**
-   * Starts SSE connection for live data updates.
-   */
-  /**
    * Creates the SSE EventSource and attaches handlers (no UI reset).
    */
   function connectSSE() {
@@ -1296,8 +1319,6 @@
    */
   function startLiveUpdates() {
     if (eventSource) return; // 已经是实时模式，无需重置
-    clearUI();
-    updateTopN({});
     lastLiveData = {};
     statusDisplay.textContent = '当前模式: 实时数据';
     connectSSE();
@@ -1326,7 +1347,6 @@
     endDateInput.value = today;
 
     buildKeyMap();
-    clearUI();
 
     queryBtn.addEventListener('click', fetchHistory);
     liveBtn.addEventListener('click', startLiveUpdates);

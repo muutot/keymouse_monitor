@@ -1,6 +1,10 @@
 fn main() {
     #[cfg(windows)]
     {
+        let ver = env!("CARGO_PKG_VERSION");
+        // Convert "2.0.0" -> "2,0,0,0"
+        let ver_csv = ver.split('.').chain(std::iter::repeat("0")).take(4).collect::<Vec<_>>().join(",");
+
         let ico_path = std::path::Path::new("static/icon/app.ico");
         let svg_path = std::path::Path::new("static/svg/logo_monitor.svg");
 
@@ -11,12 +15,11 @@ fn main() {
         }
 
         let has_ico = ico_path.exists();
-        let rc = if has_ico {
-            r#"app ICON "static/icon/app.ico"
-
+        let ico_line = if has_ico { r#"app ICON "static/icon/app.ico""# } else { "" };
+        let rc = format!(r#"{}
 1 VERSIONINFO
-FILEVERSION 1,3,1,0
-PRODUCTVERSION 1,3,1,0
+FILEVERSION {ver}
+PRODUCTVERSION {ver}
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
@@ -31,28 +34,10 @@ BEGIN
     VALUE "Translation", 0x409, 1200
   END
 END
-"#
-        } else {
-            r#"
-1 VERSIONINFO
-FILEVERSION 1,3,1,0
-PRODUCTVERSION 1,3,1,0
-BEGIN
-  BLOCK "StringFileInfo"
-  BEGIN
-    BLOCK "040904B0"
-    BEGIN
-      VALUE "FileDescription", "Key & Mouse Click Monitor"
-      VALUE "ProductName", "keymouse-monitor"
-    END
-  END
-  BLOCK "VarFileInfo"
-  BEGIN
-    VALUE "Translation", 0x409, 1200
-  END
-END
-"#
-        };
+"#,
+            ico_line,
+            ver = ver_csv
+        );
         let rc_dir = std::path::Path::new("static/icon");
         let _ = std::fs::create_dir_all(rc_dir);
         let rc_path = rc_dir.join("app.rc");
