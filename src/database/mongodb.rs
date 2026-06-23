@@ -8,7 +8,7 @@ use tokio::runtime::Runtime;
 
 use crate::config::MongoConfig;
 
-use super::{BackendType, DatabaseBackend};
+use super::{BackendType, DatabaseBackend, ImportMode};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DailyStat {
@@ -283,6 +283,95 @@ impl DatabaseBackend for MongoBackend {
             });
             serde_json::to_string_pretty(&export).expect("Failed to serialize export JSON")
         })
+    }
+
+    fn import_from_json(&mut self, json_str: &str, mode: ImportMode) {
+        let value: serde_json::Value = serde_json::from_str(json_str)
+            .expect("Failed to parse import JSON");
+        let records = value
+            .get("records")
+            .and_then(|v| v.as_object())
+            .expect("Import JSON missing 'records' object");
+
+        let total = records.len();
+        if total == 0 {
+            println!("[mongodb] Import JSON contains 0 records, skipping.");
+            return;
+        }
+
+        let collection = self.collection();
+        let dates: Vec<&str> = records.keys().map(|s| s.as_str()).collect();
+
+        self.rt.block_on(async {
+            if mode == ImportMode::Overwrite {
+                collection
+                    .delete_many(doc! { "date": { "$in": &dates } }, None)
+                    .await
+                    .expect("Failed to delete existing records");
+
+                let docs: Vec<DailyStat> = records
+                    .iter()
+                    .map(|(date, data_value)| {
+                        let data: HashMap<String, u64> =
+                            serde_json::from_value(data_value.clone()).unwrap_or_default();
+                        DailyStat {
+                            date: date.clone(),
+                            data,
+                        }
+                    })
+                    .collect();
+
+                collection
+                    .insert_many(docs, None)
+                    .await
+                    .expect("Failed to insert records");
+            } else {
+                let existing_map: HashMap<String, HashMap<String, u64>> = {
+                    let filter = doc! { "date": { "$in": &dates } };
+                    let mut cursor = collection
+                        .find(filter, None)
+                        .await
+                        .expect("Failed to query existing records for merge");
+                    let mut map = HashMap::new();
+                    while let Some(stat) = cursor.try_next().await.unwrap_or(None) {
+                        map.insert(stat.date, stat.data);
+                    }
+                    map
+                };
+
+                collection
+                    .delete_many(doc! { "date": { "$in": &dates } }, None)
+                    .await
+                    .expect("Failed to delete existing records");
+
+                let docs: Vec<DailyStat> = records
+                    .iter()
+                    .map(|(date, data_value)| {
+                        let incoming: HashMap<String, u64> =
+                            serde_json::from_value(data_value.clone()).unwrap_or_default();
+                        let mut merged =
+                            existing_map.get(date.as_str()).cloned().unwrap_or_default();
+                        for (k, v) in incoming {
+                            *merged.entry(k).or_insert(0) += v;
+                        }
+                        DailyStat {
+                            date: date.clone(),
+                            data: merged,
+                        }
+                    })
+                    .collect();
+
+                collection
+                    .insert_many(docs, None)
+                    .await
+                    .expect("Failed to insert merged records");
+            }
+        });
+
+        println!(
+            "[mongodb] Imported {} date records from JSON (mode: {:?}).",
+            total, mode
+        );
     }
 
 
