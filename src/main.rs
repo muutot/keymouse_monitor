@@ -35,11 +35,6 @@ fn should_show_console() -> bool {
     args.iter().any(|a| a == "--console" || a == "-c")
 }
 
-async fn shutdown_signal() {
-    tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
-    tinfo!("main", "\nShutdown signal received, saving data...");
-}
-
 #[tokio::main]
 async fn main() {
     #[cfg(windows)]
@@ -81,6 +76,10 @@ async fn main() {
         client_count,
     };
 
+    // Cooperative shutdown: signal the timer to stop, then wait for it
+    // to finish its current save before acquiring locks ourselves.
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+
     let save_interval = config.save_interval_secs;
     let data_for_timer = Arc::clone(&data);
     let db_for_timer = Arc::clone(&db);
@@ -89,7 +88,10 @@ async fn main() {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         interval.tick().await;
         loop {
-            interval.tick().await;
+            tokio::select! {
+                _ = interval.tick() => {}
+                _ = shutdown_rx.changed() => break,
+            }
             let data = Arc::clone(&data_for_timer);
             let db = Arc::clone(&db_for_timer);
             let _ = tokio::task::spawn_blocking(move || {
@@ -113,11 +115,16 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+            tinfo!("main", "\nShutdown signal received, saving data...");
+            let _ = shutdown_tx.send(true);
+        })
         .await
         .unwrap();
 
-    timer_task.abort();
+    // Wait for timer to finish its current save before touching data
+    let _ = timer_task.await;
 
     let mut guard = data.write();
     guard.save_to_db(&db.lock().unwrap());
