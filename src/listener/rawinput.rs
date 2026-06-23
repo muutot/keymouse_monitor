@@ -1,5 +1,5 @@
 use std::mem;
-use std::ptr::{null_mut, read_unaligned};
+use std::ptr::null_mut;
 use std::sync::{atomic::AtomicUsize, Arc};
 use std::thread;
 
@@ -7,13 +7,14 @@ use parking_lot::RwLock;
 use rdev::{Button, EventType};
 use tokio::sync::watch;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-use crate::{tinfo, terror, data::MonitorData, listener::{common, keyboard}};
-
-const RAW_BUF_SIZE: usize = 64;
+use crate::{
+    data::MonitorData,
+    listener::{common, keyboard},
+    terror, tinfo,
+};
 
 static mut KEYBOARD_HOOK: HHOOK = null_mut();
 
@@ -46,23 +47,10 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
 }
 
 unsafe fn process_raw_input(lparam: LPARAM) {
-    let mut buf = [0u8; RAW_BUF_SIZE];
-    let mut size = RAW_BUF_SIZE as u32;
-    let written = GetRawInputData(
-        lparam as _,
-        RID_INPUT,
-        buf.as_mut_ptr() as *mut _,
-        &mut size,
-        size_of::<RAWINPUTHEADER>() as u32,
-    );
-    if written == u32::MAX || written < size_of::<RAWINPUTHEADER>() as u32 {
-        return;
-    }
-
-    let raw: RAWINPUT = read_unaligned(buf.as_ptr() as *const RAWINPUT);
-    if raw.header.dwType != RIM_TYPEMOUSE {
-        return;
-    }
+    let raw = match keymouse_rawinput::read_raw_input(lparam) {
+        Some(raw) if raw.header.dwType == RIM_TYPEMOUSE => raw,
+        _ => return,
+    };
 
     let mouse = &raw.data.mouse;
     let flags = mouse.Anonymous.Anonymous.usButtonFlags as u32;
@@ -138,51 +126,23 @@ pub fn start(
             client_count,
         });
 
-        let class_name = b"KeyMouseMonWndClass\0";
-        let hinst = GetModuleHandleA(null_mut());
-        let wc = WNDCLASSA {
-            style: 0,
-            lpfnWndProc: Some(DefWindowProcA),
-            cbClsExtra: 0,
-            cbWndExtra: 0,
-            hInstance: hinst,
-            hIcon: null_mut(),
-            hCursor: null_mut(),
-            hbrBackground: null_mut(),
-            lpszMenuName: null_mut(),
-            lpszClassName: class_name.as_ptr() as _,
+        let hwnd = match keymouse_rawinput::create_message_window(
+            b"KeyMouseMonWndClass\0",
+            Some(DefWindowProcA),
+        ) {
+            Ok(h) => h,
+            Err(e) => {
+                terror!("rawinput", "{}", e);
+                return;
+            }
         };
-        if RegisterClassA(&wc) == 0 {
-            terror!("rawinput", "Failed to register window class");
-            return;
-        }
 
-        let hwnd = CreateWindowExA(
-            0,
-            class_name.as_ptr() as _,
-            null_mut(),
-            0,
-            0,
-            0,
-            0,
-            0,
-            HWND_MESSAGE,
-            null_mut(),
-            hinst,
-            null_mut(),
-        );
-        if hwnd.is_null() {
-            terror!("rawinput", "Failed to create message-only window");
-            return;
-        }
-
-        let rid = RAWINPUTDEVICE {
-            usUsagePage: 0x01,
-            usUsage: 0x02,
-            dwFlags: RIDEV_INPUTSINK | RIDEV_NOLEGACY,
-            hwndTarget: hwnd,
-        };
-        if RegisterRawInputDevices(&rid, 1, size_of::<RAWINPUTDEVICE>() as u32) == 0 {
+        if !keymouse_rawinput::register_raw_input_device(
+            hwnd,
+            0x01,
+            0x02,
+            RIDEV_INPUTSINK | RIDEV_NOLEGACY,
+        ) {
             terror!("rawinput", "Failed to register raw input device");
             return;
         }

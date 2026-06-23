@@ -1,17 +1,12 @@
 [package]
-name = "key-viewer"
+name = "keymouse-rawinput"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-keymouse-common = { path = "../../common" }
-rdev = "0.5"
-
-[target.'cfg(windows)'.dependencies]
-keymouse-rawinput = { path = "../../rawinput" }
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
-    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input",
 ] }

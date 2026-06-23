@@ -1,75 +1,39 @@
 #![cfg(windows)]
 
-use std::ptr::{null_mut, read_unaligned};
+use std::ptr::null_mut;
 
 use windows_sys::Win32::Foundation::LPARAM;
-use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
-const BUF_SIZE: usize = 128;
-
 pub fn start() {
     unsafe {
-        let class_name = b"KeyViewerRawInputWndClass\0";
-        let hinst = GetModuleHandleA(null_mut());
-        let wc = WNDCLASSA {
-            style: 0,
-            lpfnWndProc: Some(DefWindowProcA),
-            cbClsExtra: 0,
-            cbWndExtra: 0,
-            hInstance: hinst,
-            hIcon: null_mut(),
-            hCursor: null_mut(),
-            hbrBackground: null_mut(),
-            lpszMenuName: null_mut(),
-            lpszClassName: class_name.as_ptr() as _,
+        let hwnd = match keymouse_rawinput::create_message_window(
+            b"KeyViewerRawInputWndClass\0",
+            Some(DefWindowProcA),
+        ) {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("rawinput: {}", e);
+                return;
+            }
         };
-        if RegisterClassA(&wc) == 0 {
-            eprintln!("rawinput: Failed to register window class");
-            return;
-        }
 
-        let hwnd = CreateWindowExA(
-            0,
-            class_name.as_ptr() as _,
-            null_mut(),
-            0,
-            0, 0, 0, 0,
-            HWND_MESSAGE,
-            null_mut(),
-            hinst,
-            null_mut(),
-        );
-        if hwnd.is_null() {
-            eprintln!("rawinput: Failed to create message-only window");
-            return;
-        }
-
-        let devices = [
-            RAWINPUTDEVICE {
-                usUsagePage: 0x01,
-                usUsage: 0x06,
-                dwFlags: RIDEV_INPUTSINK,
-                hwndTarget: hwnd,
-            },
-            RAWINPUTDEVICE {
-                usUsagePage: 0x01,
-                usUsage: 0x02,
-                dwFlags: RIDEV_INPUTSINK,
-                hwndTarget: hwnd,
-            },
-        ];
-        if RegisterRawInputDevices(devices.as_ptr(), 2, size_of::<RAWINPUTDEVICE>() as u32) == 0 {
-            eprintln!("rawinput: Failed to register raw input devices");
-            return;
+        for &(page, usage) in &[(0x01, 0x06), (0x01, 0x02)] {
+            if !keymouse_rawinput::register_raw_input_device(hwnd, page, usage, RIDEV_INPUTSINK) {
+                eprintln!(
+                    "rawinput: Failed to register raw input device ({:04x}/{:04x})",
+                    page, usage
+                );
+                return;
+            }
         }
 
         println!("\nRaw Input 模式已启动，按下按键/鼠标按钮查看信息，按 Ctrl+C 退出\n");
-    println!(
-        "{:<7} {:<30} {:<22} {:<10} 事件名",
-        "类型", "RAW 信息", "映射名称", "代码"
-    );
+        println!(
+            "{:<7} {:<30} {:<22} {:<10} 事件名",
+            "类型", "RAW 信息", "映射名称", "代码"
+        );
         println!("{}", "-".repeat(100));
 
         let mut msg = std::mem::zeroed();
@@ -85,31 +49,10 @@ pub fn start() {
 }
 
 unsafe fn process_raw_input(lparam: LPARAM) {
-    let mut size: u32 = 0;
-    GetRawInputData(
-        lparam as _,
-        RID_INPUT,
-        null_mut(),
-        &mut size,
-        size_of::<RAWINPUTHEADER>() as u32,
-    );
-    if size == 0 || size > BUF_SIZE as u32 {
-        return;
-    }
-
-    let mut buf = [0u8; BUF_SIZE];
-    let written = GetRawInputData(
-        lparam as _,
-        RID_INPUT,
-        buf.as_mut_ptr() as _,
-        &mut size,
-        size_of::<RAWINPUTHEADER>() as u32,
-    );
-    if written == u32::MAX {
-        return;
-    }
-
-    let raw: RAWINPUT = read_unaligned(buf.as_ptr() as *const RAWINPUT);
+    let raw = match keymouse_rawinput::read_raw_input(lparam) {
+        Some(raw) => raw,
+        None => return,
+    };
     match raw.header.dwType {
         RIM_TYPEKEYBOARD => process_keyboard(&raw.data.keyboard),
         RIM_TYPEMOUSE => process_mouse(&raw.data.mouse),
@@ -144,10 +87,7 @@ unsafe fn process_mouse(mouse: &RAWMOUSE) {
         ($flag:ident, $action:expr, $name:expr) => {
             if flags & $flag != 0 {
                 let info = format!("{} data={}", $action, data);
-                println!(
-                    "{:<7} {:<30} {:<22} {:<10}",
-                    "鼠标", info, $name, data
-                );
+                println!("{:<7} {:<30} {:<22} {:<10}", "鼠标", info, $name, data);
             }
         };
     }

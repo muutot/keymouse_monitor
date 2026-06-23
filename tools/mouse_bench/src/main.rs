@@ -7,7 +7,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{FILETIME, GetLastError, HWND, LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::System::LibraryLoader::GetModuleHandleA;
 use windows_sys::Win32::System::Threading::{GetCurrentThread, GetCurrentThreadId, GetThreadTimes};
 use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
@@ -48,7 +47,7 @@ unsafe fn send_mouse_event() {
         time: 0,
         dwExtraInfo: 0,
     };
-    SendInput(1, &input, mem::size_of::<INPUT>() as i32);
+    SendInput(1, &input, size_of::<INPUT>() as i32);
     let hwnd = STIM_HWND as HWND;
     if !hwnd.is_null() {
         PostMessageA(hwnd, WM_MOUSEMOVE, 0, 0);
@@ -141,44 +140,15 @@ fn bench_wh_mouse_ll() -> Duration {
     }
 }
 
-unsafe fn register_raw_input(hwnd: HWND) -> bool {
-    let rid = RAWINPUTDEVICE {
-        usUsagePage: 0x01,
-        usUsage: 0x02,
-        dwFlags: RIDEV_INPUTSINK | RIDEV_NOLEGACY,
-        hwndTarget: hwnd,
-    };
-    RegisterRawInputDevices(&rid, 1, mem::size_of::<RAWINPUTDEVICE>() as u32) != 0
-}
 
-unsafe fn register_raw_input_par(hwnd: HWND) -> bool {
-    let rid = RAWINPUTDEVICE {
-        usUsagePage: 0x01,
-        usUsage: 0x02,
-        dwFlags: RIDEV_INPUTSINK,
-        hwndTarget: hwnd,
-    };
-    RegisterRawInputDevices(&rid, 1, mem::size_of::<RAWINPUTDEVICE>() as u32) != 0
-}
 
 // ── Approach 2: Raw Input via DispatchMessage → wnd_proc ──────────────────
 
 unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if msg == WM_INPUT {
-        let mut size: u32 = 0;
-        GetRawInputData(lparam as _, RID_INPUT, null_mut(), &mut size, mem::size_of::<RAWINPUTHEADER>() as u32);
-        if size > 0 {
-            let mut buf = vec![0u8; size as usize];
-            let written = GetRawInputData(
-                lparam as _, RID_INPUT,
-                buf.as_mut_ptr() as *mut _, &mut size,
-                mem::size_of::<RAWINPUTHEADER>() as u32,
-            );
-            if written != u32::MAX {
-                let raw = &*(buf.as_ptr() as *const RAWINPUT);
-                if raw.header.dwType == RIM_TYPEMOUSE {
-                    let _ = raw.data.mouse.Anonymous.Anonymous.usButtonFlags;
-                }
+        if let Some(raw) = keymouse_rawinput::read_raw_input(lparam) {
+            if raw.header.dwType == RIM_TYPEMOUSE {
+                let _ = raw.data.mouse.Anonymous.Anonymous.usButtonFlags;
             }
         }
         return 0;
@@ -188,22 +158,13 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam:
 
 fn bench_rawinput_wndproc() -> Duration {
     unsafe {
-        let hinst = GetModuleHandleA(null_mut());
-        // Register class with custom wndproc FIRST, then create window
-        let wc = WNDCLASSA {
-            style: 0,
-            lpfnWndProc: Some(wnd_proc),
-            cbClsExtra: 0, cbWndExtra: 0,
-            hInstance: hinst, hIcon: null_mut(), hCursor: null_mut(), hbrBackground: null_mut(),
-            lpszMenuName: null_mut(),
-            lpszClassName: b"BenchWndProc\0".as_ptr() as _,
+        let hwnd = match keymouse_rawinput::create_message_window(b"BenchWndProc\0", Some(wnd_proc)) {
+            Ok(h) => h,
+            Err(e) => { eprintln!("  FAILED: {}", e); return Duration::ZERO; }
         };
-        if RegisterClassA(&wc) == 0 { eprintln!("  FAILED register class"); return Duration::ZERO; }
-
-        let hwnd = CreateWindowExA(0, b"BenchWndProc\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, null_mut(), hinst, null_mut());
-        if hwnd.is_null() { eprintln!("  FAILED create window"); return Duration::ZERO; }
-
-        if !register_raw_input(hwnd) { eprintln!("  FAILED register raw input"); return Duration::ZERO; }
+        if !keymouse_rawinput::register_raw_input_device(hwnd, 0x01, 0x02, RIDEV_INPUTSINK | RIDEV_NOLEGACY) {
+            eprintln!("  FAILED register raw input"); return Duration::ZERO;
+        }
 
         STIM_HWND = hwnd as isize;
         let cpu = msg_loop(|msg| {
@@ -219,16 +180,7 @@ fn bench_rawinput_wndproc() -> Duration {
 // ── Approach 3: Raw Input directly in message loop ────────────────────────
 
 unsafe fn process_raw_input(lparam: LPARAM) {
-    const BUF_SZ: usize = 64;
-    let mut buf = [0u8; BUF_SZ];
-    let mut size = BUF_SZ as u32;
-    let written = GetRawInputData(
-        lparam as _, RID_INPUT,
-        buf.as_mut_ptr() as *mut _, &mut size,
-        mem::size_of::<RAWINPUTHEADER>() as u32,
-    );
-    if written != u32::MAX && written >= mem::size_of::<RAWINPUTHEADER>() as u32 {
-        let raw = &*(buf.as_ptr() as *const RAWINPUT);
+    if let Some(raw) = keymouse_rawinput::read_raw_input(lparam) {
         if raw.header.dwType == RIM_TYPEMOUSE {
             let _ = raw.data.mouse.Anonymous.Anonymous.usButtonFlags;
         }
@@ -237,21 +189,13 @@ unsafe fn process_raw_input(lparam: LPARAM) {
 
 fn bench_rawinput_direct() -> Duration {
     unsafe {
-        let hinst = GetModuleHandleA(null_mut());
-        let wc = WNDCLASSA {
-            style: 0,
-            lpfnWndProc: Some(DefWindowProcA),
-            cbClsExtra: 0, cbWndExtra: 0,
-            hInstance: hinst, hIcon: null_mut(), hCursor: null_mut(), hbrBackground: null_mut(),
-            lpszMenuName: null_mut(),
-            lpszClassName: b"BenchDirect\0".as_ptr() as _,
+        let hwnd = match keymouse_rawinput::create_message_window(b"BenchDirect\0", Some(DefWindowProcA)) {
+            Ok(h) => h,
+            Err(e) => { eprintln!("  FAILED: {}", e); return Duration::ZERO; }
         };
-        if RegisterClassA(&wc) == 0 { eprintln!("  FAILED register class"); return Duration::ZERO; }
-
-        let hwnd = CreateWindowExA(0, b"BenchDirect\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, null_mut(), hinst, null_mut());
-        if hwnd.is_null() { eprintln!("  FAILED create window"); return Duration::ZERO; }
-
-        if !register_raw_input(hwnd) { eprintln!("  FAILED register raw input"); return Duration::ZERO; }
+        if !keymouse_rawinput::register_raw_input_device(hwnd, 0x01, 0x02, RIDEV_INPUTSINK | RIDEV_NOLEGACY) {
+            eprintln!("  FAILED register raw input"); return Duration::ZERO;
+        }
 
         STIM_HWND = hwnd as isize;
         let cpu = msg_loop(|msg| {
@@ -358,25 +302,14 @@ unsafe fn parallel_wh_mouse_ll(stop: &AtomicBool) -> Duration {
 }
 
 unsafe fn parallel_rawinput_wndproc(stop: &AtomicBool) -> Duration {
-    let hinst = GetModuleHandleA(null_mut());
-    let wc = WNDCLASSA {
-        style: 0,
-        lpfnWndProc: Some(wnd_proc),
-        cbClsExtra: 0, cbWndExtra: 0,
-        hInstance: hinst, hIcon: null_mut(), hCursor: null_mut(), hbrBackground: null_mut(),
-        lpszMenuName: null_mut(),
-        lpszClassName: b"ParWndProc\0".as_ptr() as _,
+    let hwnd = match keymouse_rawinput::create_message_window(b"ParWndProc\0", Some(wnd_proc)) {
+        Ok(h) => h,
+        Err(e) => {
+            let _ = writeln!(std::io::stdout(), "  ParWndProc: {}", e);
+            return Duration::ZERO;
+        }
     };
-    if RegisterClassA(&wc) == 0 {
-        let _ = writeln!(std::io::stdout(), "  ParWndProc: RegisterClassA err=0x{:x}", GetLastError());
-        return Duration::ZERO;
-    }
-    let hwnd = CreateWindowExA(0, b"ParWndProc\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, null_mut(), hinst, null_mut());
-    if hwnd.is_null() {
-        let _ = writeln!(std::io::stdout(), "  ParWndProc: CreateWindowExA err=0x{:x}", GetLastError());
-        return Duration::ZERO;
-    }
-    if !register_raw_input_par(hwnd) {
+    if !keymouse_rawinput::register_raw_input_device(hwnd, 0x01, 0x02, RIDEV_INPUTSINK) {
         let _ = writeln!(std::io::stdout(), "  ParWndProc: RegisterRawInputDevices err=0x{:x}", GetLastError());
         return Duration::ZERO;
     }
@@ -389,25 +322,14 @@ unsafe fn parallel_rawinput_wndproc(stop: &AtomicBool) -> Duration {
 }
 
 unsafe fn parallel_rawinput_direct(stop: &AtomicBool) -> Duration {
-    let hinst = GetModuleHandleA(null_mut());
-    let wc = WNDCLASSA {
-        style: 0,
-        lpfnWndProc: Some(DefWindowProcA),
-        cbClsExtra: 0, cbWndExtra: 0,
-        hInstance: hinst, hIcon: null_mut(), hCursor: null_mut(), hbrBackground: null_mut(),
-        lpszMenuName: null_mut(),
-        lpszClassName: b"ParDirect\0".as_ptr() as _,
+    let hwnd = match keymouse_rawinput::create_message_window(b"ParDirect\0", Some(DefWindowProcA)) {
+        Ok(h) => h,
+        Err(e) => {
+            let _ = writeln!(std::io::stdout(), "  ParDirect: {}", e);
+            return Duration::ZERO;
+        }
     };
-    if RegisterClassA(&wc) == 0 {
-        let _ = writeln!(std::io::stdout(), "  ParDirect: RegisterClassA err=0x{:x}", GetLastError());
-        return Duration::ZERO;
-    }
-    let hwnd = CreateWindowExA(0, b"ParDirect\0".as_ptr() as _, null_mut(), 0, 0, 0, 0, 0, HWND_MESSAGE, null_mut(), hinst, null_mut());
-    if hwnd.is_null() {
-        let _ = writeln!(std::io::stdout(), "  ParDirect: CreateWindowExA err=0x{:x}", GetLastError());
-        return Duration::ZERO;
-    }
-    if !register_raw_input_par(hwnd) {
+    if !keymouse_rawinput::register_raw_input_device(hwnd, 0x01, 0x02, RIDEV_INPUTSINK) {
         let _ = writeln!(std::io::stdout(), "  ParDirect: RegisterRawInputDevices err=0x{:x}", GetLastError());
         return Duration::ZERO;
     }
@@ -449,7 +371,7 @@ fn run_parallel(hz: u32, json: bool, auto: bool) {
     }).collect();
 
     // Give threads time to set up
-    std::thread::sleep(Duration::from_millis(200));
+    thread::sleep(Duration::from_millis(200));
 
     if auto {
         let stim_interval_ns = 1_000_000_000 / hz.max(1) as u64;

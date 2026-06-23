@@ -1347,6 +1347,7 @@ name = "key-viewer"
 version = "0.1.0"
 dependencies = [
  "keymouse-common",
+ "keymouse-rawinput",
  "rdev",
  "windows-sys 0.61.2",
 ]
@@ -1370,6 +1371,7 @@ dependencies = [
  "ico",
  "image",
  "keymouse-common",
+ "keymouse-rawinput",
  "mongodb",
  "parking_lot",
  "rdev",
@@ -1382,6 +1384,13 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "keymouse-rawinput"
+version = "0.1.0"
+dependencies = [
  "windows-sys 0.61.2",
 ]
 
@@ -1671,6 +1680,7 @@ dependencies = [
 name = "mouse-bench"
 version = "0.1.0"
 dependencies = [
+ "keymouse-rawinput",
  "windows-sys 0.61.2",
 ]
 
