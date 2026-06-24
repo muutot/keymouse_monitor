@@ -1,14 +1,19 @@
 # Changelog
 
-## [2.1.0]
+## [Unreleased]
 
-### Features
-- (db) add `update_mode` config (diff/full) for periodic saves — diff sends only changed keys via `merge_incremental_stats`, full sends snapshot via `upsert_day_stats` — [`2156081`](https://github.com/muutot/keymouse_monitor/commit/2156081)
-
-### Refactoring
-- (core) extract `keymouse-common` library crate, tools depend on shared code — [`e22ad9f`](https://github.com/muutot/keymouse_monitor/commit/e22ad9f)
-- (core) extract `keymouse-rawinput` library crate — [`31aec76`](https://github.com/muutot/keymouse_monitor/commit/31aec76)
-- (core) extract standalone `keymouse-rawinput` library crate — shared raw input boilerplate (window creation, device registration, raw data reading) — [`47d22ed`](https://github.com/muutot/keymouse_monitor/commit/47d22ed)
+- :recycle: [core]: extract `keymouse-common` and `keymouse-rawinput` library
+  crates — tools and main binary now depend on shared crates instead of
+  duplicating code; raw input logic moved to reusable library
+- :sparkles: [db]: add `update_mode` config (`diff`/`full`) for periodic saves
+  — `diff` sends only changed keys via incremental merge, `full` sends snapshot
+- :sparkles: [db]: add MongoDB backend with SQLite fallback — primary writes go
+  to MongoDB; on failure, retry on local SQLite; on reconnect, sync data back
+- :wrench: [workflow]: replace githook-based auto-changelog with
+  `[Unreleased]`-section workflow — commits write macro summaries directly into
+  CHANGELOG.md under `## [Unreleased]`
+- :art: [changelog]: reformat all historical CHANGELOG entries to
+  description-first (`hash last`) format
 
 ## [2.0.1]
 
