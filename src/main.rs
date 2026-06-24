@@ -42,6 +42,23 @@ fn should_show_console() -> bool {
     args.iter().any(|a| a == "--console" || a == "-c")
 }
 
+fn check_help() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        eprintln!(
+"keymouse-monitor — real-time keyboard & mouse click statistics
+
+USAGE:
+    keymouse-monitor.exe [OPTIONS]
+
+OPTIONS:
+    -c, --console    Attach a console window (hidden by default, Windows only)
+    -h, --help       Print this help message and exit
+");
+        std::process::exit(0);
+    }
+}
+
 async fn wait_for_shutdown() {
     #[cfg(windows)]
     {
@@ -66,6 +83,7 @@ async fn wait_for_shutdown() {
 
 #[tokio::main]
 async fn main() {
+    check_help();
     #[cfg(windows)]
     if should_show_console() {
         init_console();

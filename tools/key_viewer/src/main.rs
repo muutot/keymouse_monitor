@@ -5,6 +5,19 @@ mod rawinput;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!(
+"key_viewer — key press event viewer
+
+USAGE:
+    key_viewer.exe [OPTIONS]
+
+OPTIONS:
+    -r, --rawinput    Use Raw Input mode instead of rdev (Windows only)
+    -h, --help        Print this help message and exit
+");
+        return;
+    }
     let use_rawinput = args.iter().any(|a| a == "--rawinput" || a == "-r");
 
     if use_rawinput {

@@ -120,6 +120,21 @@ fn check_mongodb(cfg: &keymouse_common::config::MongoConfig) -> bool {
 }
 
 fn main() {
+    if std::env::args().any(|a| a == "--help" || a == "-h") {
+        println!(
+"db_check — database connection diagnostic tool
+
+USAGE:
+    db_check.exe [CONFIG_PATH]
+
+ARGUMENTS:
+    CONFIG_PATH    Path to config.json (default: config.json)
+
+OPTIONS:
+    -h, --help     Print this help message and exit
+");
+        return;
+    }
     let config_path = std::env::args().nth(1).unwrap_or_else(|| "config.json".to_string());
     let path = Path::new(&config_path);
 

@@ -15,6 +15,7 @@ Open `http://localhost:5000` in a browser.
 | Argument | Platform | Description |
 |---|---|---|
 | `--console`, `-c` | Windows | Attach a console window (hidden by default) |
+| `--help`, `-h` | all | Print usage and exit (all binaries support this) |
 
 ## Configuration
 
@@ -213,9 +214,9 @@ CI (GitHub Actions) builds on push to `main` that modifies the `version` file; a
 │       ├── rawinput.rs       # WH_KEYBOARD_LL + Raw Input (stack buffer)
 │       └── rdev.rs           # Cross-platform rdev backend
 ├── tools/
-│   ├── key_viewer/           # Live VK code inspector
-│   ├── mouse_bench/          # CPU benchmark of 3 mouse backends
-│   └── db_check/             # Database connectivity checker
+│   ├── key_viewer/           # Live VK code inspector (--rawinput, -h)
+│   ├── mouse_bench/          # CPU benchmark of 3 mouse backends (--auto, -j, -h)
+│   └── db_check/             # Database connectivity checker [CONFIG_PATH] (-h)
 ├── index.html                # SPA frontend (dark theme, grid layout)
 ├── static/
 │   ├── svg/                  # SVG assets (logo)

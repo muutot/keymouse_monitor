@@ -61,6 +61,17 @@ summary from `[Unreleased]` section comes first, with commit hashes appended:
 - (module) description — [`ab12cd3`](url), [`ef4567`](url)
 ```
 
+**88-char display rule**: each line at most 88 **display characters**. The URL
+inside `[label](url)` does not count — only `[label]` is counted.
+
+**Hash placement**: the `— [`hash`](url)` sequence must never be split across
+lines. Instead:
+
+- Single hash: put `— [`hash`](url)` at the start of a continuation line, or
+  inline if it fits within 88 display chars of the first line.
+- Multiple hashes: group inside parentheses
+  `([`hash1`](url), [`hash2`](url), ...)` on a continuation line.
+
 Categories in order: Features, Bug Fixes, Refactoring, Performance, Chores.
 
 ## Example

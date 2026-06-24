@@ -240,6 +240,23 @@ struct BenchResult {
     cpu: Duration,
 }
 
+fn print_usage() {
+    eprintln!(
+"mouse_bench — mouse listener CPU benchmark
+
+USAGE:
+    mouse_bench.exe [OPTIONS]
+
+OPTIONS:
+    -a, --auto <HZ>       Auto-generate mouse movement at given rate (default 100 Hz)
+    -j, --json            Output results as JSON
+    -s, --sequential      Run approaches sequentially instead of in parallel
+    --hz <HZ>             Stimulus rate in Hz (default 100)
+    --only <1|2|3>        Run only one approach by number (sequential mode only)
+    -h, --help            Print this help message and exit
+");
+}
+
 fn parse_args() -> (bool, u32, bool, Option<usize>, bool) {
     let mut auto = false;
     let mut hz = 100u32;
@@ -253,6 +270,7 @@ fn parse_args() -> (bool, u32, bool, Option<usize>, bool) {
             "--auto" | "-a" => auto = true,
             "--json" | "-j" => json = true,
             "--sequential" | "-s" => sequential = true,
+            "--help" | "-h" => { print_usage(); std::process::exit(0); }
             "--hz" => {
                 if i + 1 < args.len() {
                     i += 1;
