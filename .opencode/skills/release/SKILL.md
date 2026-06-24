@@ -16,7 +16,7 @@ metadata:
 | `Cargo.toml` | `[package] version = "X.X.X"` |
 | `static/icon/app.rc` | `FILEVERSION X,X,0,0` and `PRODUCTVERSION X,X,0,0` (comma-separated) |
 | `CHANGELOG.md` | Add new `## [X.X.X]` section with grouped entries, each linked to its commit hash; add new `## [Unreleased]` section above it |
-| `Unreleased` | Delete this file after processing |
+| `Unreleased.md` | Delete this file after processing |
 | `Cargo.lock` | Updated automatically by `cargo check` |
 
 ## Unreleased → CHANGELOG Mapping
@@ -35,8 +35,11 @@ metadata:
 5. Build CHANGELOG entries with the actual commit hashes. One `Unreleased` entry may map to multiple commits — list them all under the same section/category.
 6. Update `version`, `Cargo.toml`, and `static/icon/app.rc` with the new version.
 7. Run `cargo check` to regenerate `Cargo.lock`.
-8. In `CHANGELOG.md`, insert a new `## [X.X.X]` section above the `[Unreleased]` section with the mapped entries grouped by category (Features / Bug Fixes / Refactoring / Performance / Chores). Each entry must include the full commit link.
-9. Delete the `Unreleased` file.
+8. In `CHANGELOG.md`, insert a new `## [X.X.X]` section above the
+   `[Unreleased]` section with the mapped entries grouped by category (Features
+   / Bug Fixes / Refactoring / Performance / Chores). Each entry must include
+   the full commit link.
+9. Delete the `Unreleased.md` file.
 10. Commit all changes with message `:bookmark: bump version to X.X.X`.
 
 ## CHANGELOG Entry Format
