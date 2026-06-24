@@ -114,7 +114,7 @@ impl MonitorData {
         })
     }
 
-    pub fn save_to_db(&mut self, db: &Database, update_mode: &UpdateMode) {
+    pub fn save_to_db(&mut self, db: &mut Database, update_mode: &UpdateMode) {
         if let Some(result) = self.prepare_save() {
             if result.is_rollover {
                 db.upsert_day_stats(&result.date, &result.snapshot);
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn test_save_to_db_merges_and_clears_incremental() {
-        let db = make_db();
+        let mut db = make_db();
         let today = make_today();
 
         // Pre-populate DB with base data
@@ -236,7 +236,7 @@ mod tests {
         data.increase_count("a");
         data.increase_count("b");
 
-        data.save_to_db(&db, &UpdateMode::Diff);
+        data.save_to_db(&mut db, &UpdateMode::Diff);
 
         assert!(data.incremental_counts.is_empty());
         assert_eq!(data.base_counts.get("a"), Some(&11));
@@ -250,11 +250,11 @@ mod tests {
 
     #[test]
     fn test_save_to_db_empty_incremental_does_nothing() {
-        let db = make_db();
+        let mut db = make_db();
         let mut data = make_empty();
         data.base_counts.insert("k".to_string(), 7);
 
-        data.save_to_db(&db, &UpdateMode::Full);
+        data.save_to_db(&mut db, &UpdateMode::Full);
 
         assert_eq!(data.base_counts.get("k"), Some(&7));
         let saved = db.get_stats_for_day("2026-06-22");
@@ -263,7 +263,7 @@ mod tests {
 
     #[test]
     fn test_save_to_db_day_rollover_clears_base() {
-        let db = make_db();
+        let mut db = make_db();
         let mut data = make_empty();
         let today = make_today();
         data.base_counts.insert("old".to_string(), 99);
@@ -271,7 +271,7 @@ mod tests {
         data.increase_count("new_day");
 
         // save_to_db handles both saves: flushes yesterday, persists today
-        data.save_to_db(&db, &UpdateMode::Full);
+        data.save_to_db(&mut db, &UpdateMode::Full);
 
         assert_eq!(data.today, today);
         assert!(data.incremental_counts.is_empty());
@@ -320,7 +320,7 @@ mod tests {
 
     #[test]
     fn test_save_to_db_merges_incrementally() {
-        let db = make_db();
+        let mut db = make_db();
         let today = make_today();
 
         // Pre-populate DB with base data (simulates previous session)
@@ -339,7 +339,7 @@ mod tests {
         // New keypresses since last save
         data.increase_count("a");
         data.increase_count("b");
-        data.save_to_db(&db, &UpdateMode::Diff);
+        data.save_to_db(&mut db, &UpdateMode::Diff);
 
         // Verify: incremental merge should have added to existing
         let saved = db.get_stats_for_day(&today);
@@ -349,7 +349,7 @@ mod tests {
         // Another round of diffs
         data.increase_count("a");
         data.increase_count("c");
-        data.save_to_db(&db, &UpdateMode::Diff);
+        data.save_to_db(&mut db, &UpdateMode::Diff);
 
         let saved = db.get_stats_for_day(&today);
         assert_eq!(saved.get("a"), Some(&12), "a was 11, incremented by 1 -> 12");

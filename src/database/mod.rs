@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::config::{DatabaseConfig, MongoConfig, SqliteConfig};
+use crate::config::{
+    DatabaseConfig, FallbackConfig, FallbackSyncMode, MongoConfig, SqliteConfig,
+};
+use crate::{tinfo, twarn};
 
 mod mongodb;
 mod sqlite;
@@ -33,41 +36,69 @@ impl BackendType {
             _ => BackendType::Sqlite,
         }
     }
-
 }
 
 pub trait DatabaseBackend: Send {
-    fn get_stats_for_day(&self, date_str: &str) -> HashMap<String, u64>;
-    fn get_stats_for_range(&self, start_date: &str, end_date: &str) -> HashMap<String, u64>;
-    fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>);
-    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>);
-    fn export_to_json(&self, format: &str) -> String;
-    fn import_from_json(&mut self, json_str: &str, mode: ImportMode);
+    fn get_stats_for_day(&self, date_str: &str) -> Result<HashMap<String, u64>, String>;
+    fn get_stats_for_range(&self, start_date: &str, end_date: &str) -> Result<HashMap<String, u64>, String>;
+    fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) -> Result<(), String>;
+    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) -> Result<(), String>;
+    fn export_to_json(&self, format: &str) -> Result<String, String>;
+    fn import_from_json(&mut self, json_str: &str, mode: ImportMode) -> Result<(), String>;
+    fn try_ping(&self) -> Result<(), String>;
     fn backend_type(&self) -> BackendType;
 }
 
 pub struct Database {
     inner: Box<dyn DatabaseBackend>,
+    fallback: Option<sqlite::SqliteBackend>,
+    is_mongodb: bool,
+    sync_mode: FallbackSyncMode,
+    disconnected: bool,
 }
 
 impl Database {
     pub fn new_sqlite(cfg: &SqliteConfig, _use_server_aggregation: bool) -> Self {
         Database {
             inner: Box::new(sqlite::SqliteBackend::new(cfg)),
+            fallback: None,
+            is_mongodb: false,
+            sync_mode: FallbackSyncMode::default(),
+            disconnected: false,
         }
     }
 
-    pub fn new_mongodb(cfg: &MongoConfig, _use_server_aggregation: bool) -> Self {
+    fn new_mongodb_with_fallback(
+        mongo_cfg: &MongoConfig,
+        fallback_cfg: Option<&FallbackConfig>,
+    ) -> Self {
+        let backend = Box::new(mongodb::MongoBackend::new(mongo_cfg));
+        let (fallback, sync_mode) = fallback_cfg
+            .filter(|f| f.enable)
+            .map(|f| {
+                let sqlite_cfg = SqliteConfig {
+                    path: f.path.clone(),
+                    table: f.table.clone(),
+                };
+                (Some(sqlite::SqliteBackend::new(&sqlite_cfg)), f.sync_mode.clone())
+            })
+            .unwrap_or((None, FallbackSyncMode::Immediate));
+
         Database {
-            inner: Box::new(mongodb::MongoBackend::new(cfg)),
+            inner: backend,
+            fallback,
+            is_mongodb: true,
+            sync_mode,
+            disconnected: false,
         }
     }
 
     pub fn connect(db_cfg: &DatabaseConfig) -> Self {
-        let backend = BackendType::from_str(&db_cfg.backend);
-        match backend {
+        match BackendType::from_str(&db_cfg.backend) {
             BackendType::Sqlite => Self::new_sqlite(&db_cfg.sqlite, false),
-            BackendType::MongoDb => Self::new_mongodb(&db_cfg.mongodb, false),
+            BackendType::MongoDb => {
+                Self::new_mongodb_with_fallback(&db_cfg.mongodb, db_cfg.mongodb.fallback.as_ref())
+            }
         }
     }
 
@@ -82,28 +113,129 @@ impl Database {
         )
     }
 
+    /// Try primary; on failure write to fallback and mark disconnected.
+    fn write_with_fallback<F>(&mut self, op_name: &str, primary: F)
+    where
+        F: Fn(&dyn DatabaseBackend) -> Result<(), String>,
+    {
+        match primary(self.inner.as_ref()) {
+            Ok(()) => {
+                if self.disconnected {
+                    self.on_reconnect();
+                }
+            }
+            Err(e) => {
+                self.disconnected = true;
+                twarn!("database", "Primary {} failed: {}", op_name, e);
+                if let Some(ref fb) = self.fallback {
+                    twarn!("database", "Falling back to local SQLite for {}", op_name);
+                    let _ = primary(fb);
+                }
+            }
+        }
+    }
+
+    fn read_with_fallback<F, T>(&self, op_name: &str, primary: F) -> T
+    where
+        F: Fn(&dyn DatabaseBackend) -> Result<T, String>,
+        T: Default,
+    {
+        match primary(self.inner.as_ref()) {
+            Ok(v) => v,
+            Err(e) => {
+                twarn!("database", "Primary {} failed: {}", op_name, e);
+                if let Some(ref fb) = self.fallback {
+                    twarn!("database", "Reading from fallback SQLite for {}", op_name);
+                    primary(fb).unwrap_or_default()
+                } else {
+                    T::default()
+                }
+            }
+        }
+    }
+
+    fn on_reconnect(&mut self) {
+        tinfo!("database", "Primary reconnected");
+        self.disconnected = false;
+        if let Some(ref fb) = self.fallback {
+            let sync_immediate = matches!(self.sync_mode, FallbackSyncMode::Immediate);
+            if sync_immediate {
+                self.sync_from_fallback(fb);
+            }
+        }
+    }
+
+    fn sync_from_fallback(&self, fb: &sqlite::SqliteBackend) {
+        tinfo!("database", "Syncing fallback data to primary...");
+        let dates = match fb.get_dates() {
+            Ok(d) => d,
+            Err(e) => {
+                twarn!("database", "Failed to read dates from fallback: {}", e);
+                return;
+            }
+        };
+        let mut total = 0usize;
+        for date in &dates {
+            if let Ok(data) = fb.get_stats_for_day(date) {
+                if !data.is_empty() {
+                    if let Err(e) = self.inner.upsert_day_stats(date, &data) {
+                        twarn!("database", "Sync failed for {}: {}", date, e);
+                        return;
+                    }
+                    total += data.len();
+                }
+            }
+        }
+        tinfo!("database", "Sync complete: synced {} keys across {} dates", total, dates.len());
+        let _ = fb.clear_all();
+    }
+
+    /// Attempt to reconnect the primary and sync fallback.
+    /// Returns true if reconnection and sync succeeded.
+    pub fn try_reconnect(&mut self) -> bool {
+        if !self.is_mongodb || !self.disconnected {
+            return true;
+        }
+        match self.inner.try_ping() {
+            Ok(()) => {
+                self.on_reconnect();
+                true
+            }
+            Err(e) => {
+                twarn!("database", "Reconnect ping failed: {}", e);
+                false
+            }
+        }
+    }
+
     pub fn get_stats_for_day(&self, date_str: &str) -> HashMap<String, u64> {
-        self.inner.get_stats_for_day(date_str)
+        self.read_with_fallback("get_stats_for_day", |b| b.get_stats_for_day(date_str))
     }
 
     pub fn get_stats_for_range(&self, start_date: &str, end_date: &str) -> HashMap<String, u64> {
-        self.inner.get_stats_for_range(start_date, end_date)
+        self.read_with_fallback("get_stats_for_range", |b| {
+            b.get_stats_for_range(start_date, end_date)
+        })
     }
 
-    pub fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
-        self.inner.upsert_day_stats(date_str, data)
+    pub fn upsert_day_stats(&mut self, date_str: &str, data: &HashMap<String, u64>) {
+        self.write_with_fallback("upsert_day_stats", |b| b.upsert_day_stats(date_str, data))
     }
 
-    pub fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
-        self.inner.merge_incremental_stats(date_str, data)
+    pub fn merge_incremental_stats(&mut self, date_str: &str, data: &HashMap<String, u64>) {
+        self.write_with_fallback("merge_incremental_stats", |b| {
+            b.merge_incremental_stats(date_str, data)
+        })
     }
 
     pub fn export_to_json(&self, format: &str) -> String {
-        self.inner.export_to_json(format)
+        self.read_with_fallback("export_to_json", |b| b.export_to_json(format))
     }
 
     pub fn import_from_json(&mut self, json_str: &str, mode: ImportMode) {
-        self.inner.import_from_json(json_str, mode)
+        if let Err(e) = self.inner.import_from_json(json_str, mode) {
+            twarn!("database", "Import failed: {}", e);
+        }
     }
 
     #[allow(dead_code)]

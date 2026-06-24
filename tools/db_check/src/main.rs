@@ -56,7 +56,7 @@ fn extract_hostport(uri: &str) -> Option<String> {
         after_scheme
     };
     let host_part = after_auth
-        .split(|c| c == '/' || c == '?')
+        .split(['/', '?'])
         .next()
         .unwrap_or(after_auth);
     if host_part.is_empty() { None } else { Some(host_part.to_string()) }

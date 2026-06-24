@@ -127,12 +127,17 @@ async fn main() {
             let db = Arc::clone(&db_for_timer);
             let mode = update_mode_timer.clone();
             let _ = tokio::task::spawn_blocking(move || {
+                // Try reconnecting fallback primary (e.g. MongoDB) each tick
+                if let Ok(mut db_guard) = db.lock() {
+                    let _ = db_guard.try_reconnect();
+                }
                 let snapshot = {
                     let mut guard = data.write();
                     guard.prepare_save()
                 };
                 if let Some(result) = snapshot {
-                    let db = db.lock().unwrap();
+                    let mut db_guard = db.lock().unwrap();
+                    let db = &mut *db_guard;
                     if result.is_rollover {
                         db.upsert_day_stats(&result.date, &result.snapshot);
                     } else {
@@ -175,7 +180,8 @@ async fn main() {
     let mode_shutdown = update_mode_shutdown;
     tokio::task::spawn_blocking(move || {
         let mut guard = data_clone.write();
-        guard.save_to_db(&db_clone.lock().unwrap(), &mode_shutdown);
+        let mut db_guard = db_clone.lock().unwrap();
+        guard.save_to_db(&mut db_guard, &mode_shutdown);
     })
     .await
     .unwrap();

@@ -9,7 +9,7 @@ use super::{BackendType, DatabaseBackend, ImportMode};
 
 pub struct SqliteBackend {
     conn: Connection,
-    table_name: String,
+    pub(crate) table_name: String,
 }
 
 impl SqliteBackend {
@@ -28,7 +28,6 @@ impl SqliteBackend {
     fn init_db(&self) {
         tinfo!("sqlite", "Checking database table structure...");
 
-        // Check if old nested-format table exists
         let has_old: bool = {
             let mut stmt = self
                 .conn
@@ -43,7 +42,6 @@ impl SqliteBackend {
         };
 
         if has_old {
-            // Check if it's the old schema (has 'data' column but no 'key')
             let is_old: bool = {
                 let mut stmt = self
                     .conn
@@ -68,7 +66,6 @@ impl SqliteBackend {
                 self.conn.execute_batch(&create_sql)
                     .expect("Failed to create new table");
 
-                // Copy old data: parse JSON blob and flatten
                 let mut stmt = self
                     .conn
                     .prepare_cached(&format!(
@@ -101,7 +98,6 @@ impl SqliteBackend {
                     }
                 }
 
-                // Drop old table, rename new
                 self.conn
                     .execute_batch(&format!(
                         "DROP TABLE {}; ALTER TABLE {} RENAME TO {}",
@@ -123,6 +119,26 @@ impl SqliteBackend {
 
         tinfo!("sqlite", "Database initialization complete.");
     }
+
+    /// Get distinct dates that have data (used for fallback sync).
+    pub fn get_dates(&self) -> Result<Vec<String>, String> {
+        let sql = format!("SELECT DISTINCT date FROM {} ORDER BY date", self.table_name);
+        let mut stmt = self.conn.prepare_cached(&sql)
+            .map_err(|e| format!("prepare dates: {e}"))?;
+        let dates = stmt.query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("query dates: {e}"))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(dates)
+    }
+
+    /// Delete all data (used after syncing fallback to primary).
+    pub fn clear_all(&self) -> Result<(), String> {
+        let sql = format!("DELETE FROM {}", self.table_name);
+        self.conn.execute(&sql, [])
+            .map_err(|e| format!("clear fallback: {e}"))?;
+        Ok(())
+    }
 }
 
 impl DatabaseBackend for SqliteBackend {
@@ -130,7 +146,12 @@ impl DatabaseBackend for SqliteBackend {
         BackendType::Sqlite
     }
 
-    fn get_stats_for_day(&self, date_str: &str) -> HashMap<String, u64> {
+    fn try_ping(&self) -> Result<(), String> {
+        self.conn.execute_batch("SELECT 1")
+            .map_err(|e| format!("sqlite ping: {e}"))
+    }
+
+    fn get_stats_for_day(&self, date_str: &str) -> Result<HashMap<String, u64>, String> {
         let sql = format!(
             "SELECT key, count FROM {} WHERE date = ?1",
             self.table_name
@@ -138,26 +159,27 @@ impl DatabaseBackend for SqliteBackend {
         let mut stmt = self
             .conn
             .prepare_cached(&sql)
-            .expect("Failed to prepare SELECT");
+            .map_err(|e| format!("prepare select: {e}"))?;
         let results = stmt
             .query_map([date_str], |row| {
                 let key: String = row.get(0)?;
                 let count: i64 = row.get(1)?;
                 Ok((key, count as u64))
             })
-            .expect("Failed to query day stats");
+            .map_err(|e| format!("query day stats: {e}"))?;
         let mut map = HashMap::new();
-        for (key, count) in results.flatten() {
+        for r in results {
+            let (key, count) = r.map_err(|e| format!("row: {e}"))?;
             map.insert(key, count);
         }
-        map
+        Ok(map)
     }
 
     fn get_stats_for_range(
         &self,
         start_date: &str,
         end_date: &str,
-    ) -> HashMap<String, u64> {
+    ) -> Result<HashMap<String, u64>, String> {
         let sql = format!(
             "SELECT key, SUM(count) FROM {} \
              WHERE date BETWEEN ?1 AND ?2 GROUP BY key",
@@ -166,31 +188,32 @@ impl DatabaseBackend for SqliteBackend {
         let mut stmt = self
             .conn
             .prepare_cached(&sql)
-            .expect("Failed to prepare aggregation SELECT");
+            .map_err(|e| format!("prepare agg: {e}"))?;
         let results = stmt
             .query_map([start_date, end_date], |row| {
                 let key: String = row.get(0)?;
                 let value: i64 = row.get(1)?;
                 Ok((key, value as u64))
             })
-            .expect("Failed to query aggregation data");
+            .map_err(|e| format!("query agg: {e}"))?;
         let mut aggregated = HashMap::new();
-        for (key, value) in results.flatten() {
+        for r in results {
+            let (key, value) = r.map_err(|e| format!("row: {e}"))?;
             aggregated.insert(key, value);
         }
-        aggregated
+        Ok(aggregated)
     }
 
-    fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
+    fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) -> Result<(), String> {
         let t0 = Instant::now();
         let key_count = data.len();
 
         if data.is_empty() {
-            // Delete any lingering rows for empty data
             let delete_sql = format!("DELETE FROM {} WHERE date = ?1", self.table_name);
-            self.conn.execute(&delete_sql, [date_str]).expect("Failed to delete");
+            self.conn.execute(&delete_sql, [date_str])
+                .map_err(|e| format!("delete empty: {e}"))?;
             tdebug!("sqlite", "upsert_day_stats({}): delete only (empty), total={:?}", date_str, t0.elapsed());
-            return;
+            return Ok(());
         }
 
         let upsert_sql = format!(
@@ -200,10 +223,10 @@ impl DatabaseBackend for SqliteBackend {
         let mut stmt = self
             .conn
             .prepare_cached(&upsert_sql)
-            .expect("Failed to prepare upsert");
+            .map_err(|e| format!("prepare upsert: {e}"))?;
         for (key, count) in data {
             stmt.execute([date_str, key, &count.to_string()])
-                .expect("Failed to upsert day stat");
+                .map_err(|e| format!("upsert day stat: {e}"))?;
         }
         let elapsed = t0.elapsed();
 
@@ -213,15 +236,16 @@ impl DatabaseBackend for SqliteBackend {
             elapsed,
             key_count,
         );
+        Ok(())
     }
 
-    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
+    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) -> Result<(), String> {
         let t0 = Instant::now();
         let key_count = data.len();
 
         if data.is_empty() {
             tdebug!("sqlite", "merge_incremental_stats({}): empty, nothing to do", date_str);
-            return;
+            return Ok(());
         }
 
         let upsert_sql = format!(
@@ -232,10 +256,10 @@ impl DatabaseBackend for SqliteBackend {
         let mut stmt = self
             .conn
             .prepare_cached(&upsert_sql)
-            .expect("Failed to prepare incremental upsert");
+            .map_err(|e| format!("prepare inc upsert: {e}"))?;
         for (key, count) in data {
             stmt.execute([date_str, key, &count.to_string()])
-                .expect("Failed to merge incremental stat");
+                .map_err(|e| format!("merge inc stat: {e}"))?;
         }
         let elapsed = t0.elapsed();
 
@@ -245,9 +269,10 @@ impl DatabaseBackend for SqliteBackend {
             elapsed,
             key_count,
         );
+        Ok(())
     }
 
-    fn export_to_json(&self, format: &str) -> String {
+    fn export_to_json(&self, format: &str) -> Result<String, String> {
         let sql = format!(
             "SELECT date, key, count FROM {} ORDER BY date, key",
             self.table_name
@@ -255,7 +280,7 @@ impl DatabaseBackend for SqliteBackend {
         let mut stmt = self
             .conn
             .prepare_cached(&sql)
-            .expect("Failed to prepare export SELECT");
+            .map_err(|e| format!("prepare export: {e}"))?;
         let results: Vec<(String, String, i64)> = stmt
             .query_map([], |row| {
                 Ok((
@@ -264,7 +289,7 @@ impl DatabaseBackend for SqliteBackend {
                     row.get::<_, i64>(2)?,
                 ))
             })
-            .expect("Failed to query export data")
+            .map_err(|e| format!("query export: {e}"))?
             .filter_map(|r| r.ok())
             .collect();
 
@@ -288,7 +313,8 @@ impl DatabaseBackend for SqliteBackend {
                         .to_string(),
                     "records": records,
                 });
-                serde_json::to_string_pretty(&export).expect("Failed to serialize export JSON")
+                serde_json::to_string_pretty(&export)
+                    .map_err(|e| format!("serialize: {e}"))
             }
             _ => {
                 let mut records = serde_json::Map::new();
@@ -308,14 +334,15 @@ impl DatabaseBackend for SqliteBackend {
                         .to_string(),
                     "records": records,
                 });
-                serde_json::to_string_pretty(&export).expect("Failed to serialize export JSON")
+                serde_json::to_string_pretty(&export)
+                    .map_err(|e| format!("serialize: {e}"))
             }
         }
     }
 
-    fn import_from_json(&mut self, json_str: &str, mode: ImportMode) {
+    fn import_from_json(&mut self, json_str: &str, mode: ImportMode) -> Result<(), String> {
         let value: serde_json::Value = serde_json::from_str(json_str)
-            .expect("Failed to parse import JSON");
+            .map_err(|e| format!("parse json: {e}"))?;
 
         let records_map: HashMap<String, HashMap<String, u64>> = match value["records"] {
             serde_json::Value::Object(ref obj) => {
@@ -327,7 +354,7 @@ impl DatabaseBackend for SqliteBackend {
                 }
                 if map.is_empty() {
                     twarn!("sqlite", "Import JSON contains 0 records, skipping.");
-                    return;
+                    return Ok(());
                 }
                 map
             }
@@ -343,23 +370,22 @@ impl DatabaseBackend for SqliteBackend {
                 }
                 if map.is_empty() {
                     twarn!("sqlite", "Import JSON contains 0 records, skipping.");
-                    return;
+                    return Ok(());
                 }
                 map
             }
             _ => {
-                panic!("Import JSON 'records' must be an object (nested) or array (flat)");
+                return Err("Import JSON 'records' must be an object (nested) or array (flat)".to_string());
             }
         };
 
         let total = records_map.len();
         let dates: Vec<&str> = records_map.keys().map(|s| s.as_str()).collect();
 
-        // Pre-read existing for merge mode
         let existing_map: HashMap<String, HashMap<String, u64>> = if mode == ImportMode::Merge {
             let mut map = HashMap::new();
             for date in &dates {
-                let data = self.get_stats_for_day(date);
+                let data = self.get_stats_for_day(date)?;
                 if !data.is_empty() {
                     map.insert(date.to_string(), data);
                 }
@@ -376,17 +402,17 @@ impl DatabaseBackend for SqliteBackend {
         );
 
         let tx = self.conn.transaction()
-            .expect("Failed to begin transaction");
+            .map_err(|e| format!("begin tx: {e}"))?;
 
         {
             let mut del_stmt = tx.prepare_cached(&delete_sql)
-                .expect("Failed to prepare DELETE");
+                .map_err(|e| format!("prepare delete: {e}"))?;
             let mut ins_stmt = tx.prepare_cached(&insert_sql)
-                .expect("Failed to prepare INSERT");
+                .map_err(|e| format!("prepare insert: {e}"))?;
 
             for (date, incoming) in &records_map {
                 del_stmt.execute([date.as_str()])
-                    .expect("Failed to delete existing records");
+                    .map_err(|e| format!("delete: {e}"))?;
 
                 let data = if mode == ImportMode::Merge {
                     let mut merged = existing_map.get(date).cloned().unwrap_or_default();
@@ -400,16 +426,17 @@ impl DatabaseBackend for SqliteBackend {
 
                 for (key, count) in &data {
                     ins_stmt.execute([date.as_str(), key, &count.to_string()])
-                        .expect("Failed to insert record");
+                        .map_err(|e| format!("insert: {e}"))?;
                 }
             }
         }
 
-        tx.commit().expect("Failed to commit transaction");
+        tx.commit().map_err(|e| format!("commit: {e}"))?;
 
         tinfo!("sqlite",
             "Imported {} date records from JSON (mode: {:?}).",
             total, mode
         );
+        Ok(())
     }
 }

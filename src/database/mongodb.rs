@@ -147,23 +147,33 @@ impl DatabaseBackend for MongoBackend {
         BackendType::MongoDb
     }
 
-    fn get_stats_for_day(&self, date_str: &str) -> HashMap<String, u64> {
+    fn try_ping(&self) -> Result<(), String> {
+        let db = self.client.database(&self.db_name);
+        self.rt.block_on(async {
+            db.run_command(doc! { "ping": 1 })
+                .await
+                .map(|_| ())
+                .map_err(|e| format!("{e}"))
+        })
+    }
+
+    fn get_stats_for_day(&self, date_str: &str) -> Result<HashMap<String, u64>, String> {
         let collection = self.flat_collection();
         let filter = doc! { "date": date_str };
         self.rt.block_on(async {
             let mut cursor = collection
                 .find(filter)
                 .await
-                .expect("Failed to query day stats");
+                .map_err(|e| format!("query day stats: {e}"))?;
             let mut result = HashMap::new();
-            while let Some(stat) = cursor.try_next().await.unwrap_or(None) {
+            while let Some(stat) = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))? {
                 result.insert(stat.key, stat.count);
             }
-            result
+            Ok(result)
         })
     }
 
-    fn get_stats_for_range(&self, start_date: &str, end_date: &str) -> HashMap<String, u64> {
+    fn get_stats_for_range(&self, start_date: &str, end_date: &str) -> Result<HashMap<String, u64>, String> {
         let raw = self.raw_collection();
         let pipeline = vec![
             doc! { "$match": { "date": { "$gte": start_date, "$lte": end_date } } },
@@ -174,7 +184,7 @@ impl DatabaseBackend for MongoBackend {
             let mut cursor = raw
                 .aggregate(pipeline)
                 .await
-                .expect("Failed to aggregate range");
+                .map_err(|e| format!("aggregate range: {e}"))?;
             let t1 = Instant::now();
 
             let mut aggregated = HashMap::new();
@@ -183,7 +193,7 @@ impl DatabaseBackend for MongoBackend {
             let mut process_total = Duration::ZERO;
             loop {
                 let fetch_start = Instant::now();
-                let result = cursor.try_next().await.unwrap_or(None);
+                let result = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))?;
                 network_total += fetch_start.elapsed();
 
                 let Some(doc) = result else { break };
@@ -212,11 +222,11 @@ impl DatabaseBackend for MongoBackend {
                 count,
                 t2 - t0,
             );
-            aggregated
+            Ok(aggregated)
         })
     }
 
-    fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
+    fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) -> Result<(), String> {
         let raw = self.raw_collection();
         let ns = raw.namespace();
         let client = &self.client;
@@ -251,7 +261,7 @@ impl DatabaseBackend for MongoBackend {
             client
                 .bulk_write(models)
                 .await
-                .expect("Failed to upsert day stats via bulk_write");
+                .map_err(|e| format!("upsert day stats: {e}"))?;
             let t1 = Instant::now();
 
             tdebug!("mongodb",
@@ -261,10 +271,11 @@ impl DatabaseBackend for MongoBackend {
                 key_count,
                 if is_empty { ", empty" } else { "" },
             );
-        });
+            Ok(())
+        })
     }
 
-    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) {
+    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) -> Result<(), String> {
         let raw = self.raw_collection();
         let ns = raw.namespace();
         let client = &self.client;
@@ -273,7 +284,7 @@ impl DatabaseBackend for MongoBackend {
 
         if data.is_empty() {
             tdebug!("mongodb", "merge_incremental_stats({}): empty, nothing to do", date_str);
-            return;
+            return Ok(());
         }
 
         self.rt.block_on(async {
@@ -293,7 +304,7 @@ impl DatabaseBackend for MongoBackend {
             client
                 .bulk_write(models)
                 .await
-                .expect("Failed to merge incremental stats via bulk_write");
+                .map_err(|e| format!("merge inc stats: {e}"))?;
             let t1 = Instant::now();
 
             tdebug!("mongodb",
@@ -302,20 +313,21 @@ impl DatabaseBackend for MongoBackend {
                 t1 - t0,
                 key_count,
             );
-        });
+            Ok(())
+        })
     }
 
-    fn export_to_json(&self, format: &str) -> String {
+    fn export_to_json(&self, format: &str) -> Result<String, String> {
         let raw = self.raw_collection();
         self.rt.block_on(async {
             let mut cursor = raw
                 .find(doc! {})
                 .sort(doc! { "date": 1, "key": 1 })
                 .await
-                .expect("Failed to query export data");
+                .map_err(|e| format!("query export: {e}"))?;
 
             let mut flat_rows: Vec<Document> = Vec::new();
-            while let Some(doc) = cursor.try_next().await.unwrap_or(None) {
+            while let Some(doc) = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))? {
                 flat_rows.push(doc);
             }
 
@@ -342,10 +354,10 @@ impl DatabaseBackend for MongoBackend {
                             .to_string(),
                         "records": records,
                     });
-                    serde_json::to_string_pretty(&export).expect("Failed to serialize export JSON")
+                    serde_json::to_string_pretty(&export)
+                        .map_err(|e| format!("serialize: {e}"))
                 }
                 _ => {
-                    // nested format (default, backward compatible)
                     let mut records = serde_json::Map::new();
                     for d in &flat_rows {
                         let date = d.get_str("date").unwrap_or("");
@@ -366,20 +378,19 @@ impl DatabaseBackend for MongoBackend {
                             .to_string(),
                         "records": records,
                     });
-                    serde_json::to_string_pretty(&export).expect("Failed to serialize export JSON")
+                    serde_json::to_string_pretty(&export)
+                        .map_err(|e| format!("serialize: {e}"))
                 }
             }
         })
     }
 
-    fn import_from_json(&mut self, json_str: &str, mode: ImportMode) {
+    fn import_from_json(&mut self, json_str: &str, mode: ImportMode) -> Result<(), String> {
         let value: serde_json::Value = serde_json::from_str(json_str)
-            .expect("Failed to parse import JSON");
+            .map_err(|e| format!("parse json: {e}"))?;
 
-        // Parse records into per-date HashMap
         let records_map: HashMap<String, HashMap<String, u64>> = match value["records"] {
             serde_json::Value::Object(ref obj) => {
-                // Old nested format: { "records": { "2026-06-23": { "a": 10 } } }
                 let mut map = HashMap::new();
                 for (date, data_value) in obj {
                     let data: HashMap<String, u64> =
@@ -388,12 +399,11 @@ impl DatabaseBackend for MongoBackend {
                 }
                 if map.is_empty() {
                     twarn!("mongodb", "Import JSON contains 0 records, skipping.");
-                    return;
+                    return Ok(());
                 }
                 map
             }
             serde_json::Value::Array(ref arr) => {
-                // New flat format: { "records": [ { "date": "...", "key": "...", "count": N } ] }
                 let mut map: HashMap<String, HashMap<String, u64>> = HashMap::new();
                 for item in arr {
                     let date = item["date"].as_str().map(String::from);
@@ -405,12 +415,12 @@ impl DatabaseBackend for MongoBackend {
                 }
                 if map.is_empty() {
                     twarn!("mongodb", "Import JSON contains 0 records, skipping.");
-                    return;
+                    return Ok(());
                 }
                 map
             }
             _ => {
-                panic!("Import JSON 'records' must be an object (nested) or array (flat)");
+                return Err("Import JSON 'records' must be an object (nested) or array (flat)".to_string());
             }
         };
 
@@ -422,7 +432,7 @@ impl DatabaseBackend for MongoBackend {
             if mode == ImportMode::Overwrite {
                 raw.delete_many(doc! { "date": { "$in": &dates } })
                     .await
-                    .expect("Failed to delete existing records");
+                    .map_err(|e| format!("delete: {e}"))?;
 
                 let docs: Vec<Document> = records_map
                     .iter()
@@ -440,18 +450,17 @@ impl DatabaseBackend for MongoBackend {
                 if !docs.is_empty() {
                     raw.insert_many(docs)
                         .await
-                        .expect("Failed to insert records");
+                        .map_err(|e| format!("insert: {e}"))?;
                 }
             } else {
-                // Merge mode: read existing, merge, rewrite
                 let filter = doc! { "date": { "$in": &dates } };
                 let mut existing_map: HashMap<String, HashMap<String, u64>> = HashMap::new();
                 {
                     let mut cursor = raw
                         .find(filter)
                         .await
-                        .expect("Failed to query existing records for merge");
-                    while let Some(d) = cursor.try_next().await.unwrap_or(None) {
+                        .map_err(|e| format!("query for merge: {e}"))?;
+                    while let Some(d) = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))? {
                         if let (Some(date), Some(key), Some(count)) = (
                             d.get_str("date").ok().map(String::from),
                             d.get_str("key").ok().map(String::from),
@@ -464,7 +473,7 @@ impl DatabaseBackend for MongoBackend {
 
                 raw.delete_many(doc! { "date": { "$in": &dates } })
                     .await
-                    .expect("Failed to delete existing records for merge");
+                    .map_err(|e| format!("delete for merge: {e}"))?;
 
                 let docs: Vec<Document> = records_map
                     .iter()
@@ -486,14 +495,16 @@ impl DatabaseBackend for MongoBackend {
                 if !docs.is_empty() {
                     raw.insert_many(docs)
                         .await
-                        .expect("Failed to insert merged records");
+                        .map_err(|e| format!("insert merged: {e}"))?;
                 }
             }
-        });
+            Ok::<(), String>(())
+        })?;
 
         tinfo!("mongodb",
             "Imported {} date records from JSON (mode: {:?}).",
             total, mode
         );
+        Ok(())
     }
 }

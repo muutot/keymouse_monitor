@@ -2,20 +2,15 @@ use std::path::PathBuf;
 
 use crate::{tinfo, twarn};
 use serde::{Deserialize, Serialize};
-pub use keymouse_common::config::{DatabaseConfig, MongoConfig, SqliteConfig};
+pub use keymouse_common::config::{DatabaseConfig, FallbackConfig, FallbackSyncMode, MongoConfig, SqliteConfig};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum UpdateMode {
     #[serde(rename = "diff")]
+    #[default]
     Diff,
     #[serde(rename = "full")]
     Full,
-}
-
-impl Default for UpdateMode {
-    fn default() -> Self {
-        Self::Diff
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -20,6 +20,50 @@ impl Default for SqliteConfig {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub enum FallbackSyncMode {
+    #[serde(rename = "immediate")]
+    #[default]
+    Immediate,
+    #[serde(rename = "tick")]
+    Tick,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FallbackConfig {
+    #[serde(default = "default_fallback_enable")]
+    pub enable: bool,
+    #[serde(default)]
+    pub sync_mode: FallbackSyncMode,
+    #[serde(default = "default_fallback_path")]
+    pub path: String,
+    #[serde(default = "default_fallback_table")]
+    pub table: String,
+}
+
+fn default_fallback_enable() -> bool {
+    true
+}
+
+fn default_fallback_path() -> String {
+    "fallback.sqlite".to_string()
+}
+
+fn default_fallback_table() -> String {
+    "daily_stats".to_string()
+}
+
+impl Default for FallbackConfig {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            sync_mode: FallbackSyncMode::default(),
+            path: default_fallback_path(),
+            table: default_fallback_table(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MongoConfig {
     #[serde(default = "default_mongo_protocol")]
@@ -45,6 +89,8 @@ pub struct MongoConfig {
     pub server_selection_timeout_ms: u64,
     #[serde(default = "default_mongo_collection")]
     pub collection: String,
+    #[serde(default)]
+    pub fallback: Option<FallbackConfig>,
 }
 
 fn default_mongo_collection() -> String {
@@ -86,6 +132,7 @@ impl Default for MongoConfig {
             connect_timeout_ms: default_connect_timeout_ms(),
             server_selection_timeout_ms: default_server_selection_timeout_ms(),
             collection: default_mongo_collection(),
+            fallback: None,
         }
     }
 }
