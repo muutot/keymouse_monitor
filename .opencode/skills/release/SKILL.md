@@ -15,7 +15,7 @@ metadata:
 | `version` | Replace current version with new one (plain text, e.g. `2.1.0`) |
 | `Cargo.toml` | `[package] version = "X.X.X"` |
 | `static/icon/app.rc` | `FILEVERSION X,X,0,0` and `PRODUCTVERSION X,X,0,0` (comma-separated) |
-| `CHANGELOG.md` | Add new `## [X.X.X]` section with grouped entries; add new `## [Unreleased]` section above it |
+| `CHANGELOG.md` | Add new `## [X.X.X]` section with grouped entries above the latest version |
 | `Unreleased.md` | Delete this file after processing |
 | `README.md` | Review if new features/breaking changes require doc updates |
 | `Cargo.lock` | Updated automatically by `cargo check` |
@@ -42,10 +42,10 @@ metadata:
 7. Update `version`, `Cargo.toml`, and `static/icon/app.rc` with the new
    version.
 8. Run `cargo check` to regenerate `Cargo.lock`.
-9. In `CHANGELOG.md`, insert a new `## [X.X.X]` section above the
-   `[Unreleased]` section with the mapped entries grouped by category (Features
-   / Bug Fixes / Refactoring / Performance / Chores). Each entry puts the
-   description first, then commit hashes.
+9. In `CHANGELOG.md`, insert a new `## [X.X.X]` section at the top (below `#
+   Changelog`) with the mapped entries grouped by category (Features / Bug
+   Fixes / Refactoring / Performance / Chores). Each entry puts the description
+   first, then commit hashes.
 10. Delete the `Unreleased.md` file.
 11. Commit all changes with message `:bookmark: bump version to X.X.X`.
 

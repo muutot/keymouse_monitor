@@ -33,8 +33,7 @@ metadata:
    what bugs were fixed, how the architecture changed.
 9. **Write/append a macro-level entry to `Unreleased.md`** from a code-level
    perspective. Format: markdown bullet list, wrap at 88 chars, keep it
-   concise. If the file doesn't exist, create it with a `## [Unreleased]`
-   heading.
+   concise.
 10. **Stage `Unreleased.md` together with the code changes**, so the summary is
     committed as part of this commit.
 11. Proceed with committing.
@@ -53,8 +52,6 @@ metadata:
 File at repository root. Example:
 
 ```markdown
-## [Unreleased]
-
 - :sparkles: [database]: add MongoDB fallback to SQLite — when primary write
   fails, automatically retry on local SQLite; on reconnect, sync missing data
   back to MongoDB
@@ -62,8 +59,8 @@ File at repository root. Example:
   firmware where usButtonData is always 0
 ```
 
-- **Markdown** format, `## [Unreleased]` heading at top
-- **Bullet list** under heading, each describing one capability/bugfix/refactor
+- **Markdown** format, bullet list
+- Each bullet describes one capability/bugfix/refactor
 - **88-char wrap** — keep lines within 88 characters for readability
 - **Concise** — say what was done and why in as few words as possible
 - **No commit hashes** — those are added by release skill
@@ -75,8 +72,6 @@ File at repository root. Example:
 Staged changes include a database module rewrite:
 
 ```markdown
-## [Unreleased]
-
 - :sparkles: [database]: add MongoDB fallback to SQLite — when primary write
   fails, automatically retry on local SQLite; on reconnect, sync data back
 ```
@@ -84,8 +79,6 @@ Staged changes include a database module rewrite:
 ### After several commits
 
 ```markdown
-## [Unreleased]
-
 - :sparkles: [database]: add MongoDB fallback to SQLite with auto-reconnect
 - :bug: [rawinput]: hardcode X1/X2 button number instead of usButtonData
 - :recycle: [imports]: group imports and remove fully-qualified std paths
