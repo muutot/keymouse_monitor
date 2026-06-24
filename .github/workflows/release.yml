@@ -31,7 +31,7 @@ jobs:
           $ver = "${{ steps.version.outputs.version }}"
           $content = Get-Content CHANGELOG.md -Raw
           # Match ## [<version>] ... (everything up to next ## [ or EOF)
-          $pattern = "## \[$ver\].*?(?=\n## \[|\z)"
+          $pattern = "(?<=## \[$ver\]\n\n).*?(?=\n## \[|\z)"
           $match = [regex]::Match($content, $pattern, [System.Text.RegularExpressions.RegexOptions]::Singleline)
           if ($match.Success) {
             $match.Value | Out-File -FilePath release_notes.md -Encoding UTF8
