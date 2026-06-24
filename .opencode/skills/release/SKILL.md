@@ -15,8 +15,9 @@ metadata:
 | `version` | Replace current version with new one (plain text, e.g. `2.1.0`) |
 | `Cargo.toml` | `[package] version = "X.X.X"` |
 | `static/icon/app.rc` | `FILEVERSION X,X,0,0` and `PRODUCTVERSION X,X,0,0` (comma-separated) |
-| `CHANGELOG.md` | Add new `## [X.X.X]` section with grouped entries, each linked to its commit hash; add new `## [Unreleased]` section above it |
+| `CHANGELOG.md` | Add new `## [X.X.X]` section with grouped entries; add new `## [Unreleased]` section above it |
 | `Unreleased.md` | Delete this file after processing |
+| `README.md` | Review if new features/breaking changes require doc updates |
 | `Cargo.lock` | Updated automatically by `cargo check` |
 
 ## Unreleased → CHANGELOG Mapping
@@ -31,22 +32,31 @@ metadata:
 1. Find the last version tag: `git describe --tags --abbrev=0`.
 2. Determine the new version number (semver: bump major/minor/patch as appropriate).
 3. Read each `Unreleased` entry. Then inspect all commits since last tag: run `git log --format="%h %s" <last_tag>..HEAD` for overview, and `git diff <last_tag>..HEAD -- <module_path>` for each module area to understand what actually changed in code.
-4. For each `Unreleased` entry, identify the commit(s) whose diff implements that logic. The entry is written from code-level understanding, so you need to cross-reference the diff with the entry's description.
-5. Build CHANGELOG entries with the actual commit hashes. One `Unreleased` entry may map to multiple commits — list them all under the same section/category.
-6. Update `version`, `Cargo.toml`, and `static/icon/app.rc` with the new version.
-7. Run `cargo check` to regenerate `Cargo.lock`.
-8. In `CHANGELOG.md`, insert a new `## [X.X.X]` section above the
+4. For each `Unreleased` entry, identify the commit(s) whose diff implements
+   that logic. The entry is written from code-level understanding, so you need
+   to cross-reference the diff with the entry's description.
+5. Build CHANGELOG entries: **description first**, then commit hashes appended.
+   One `Unreleased` entry may map to multiple commits — list all hashes.
+6. Check `README.md` — if the new release adds features, changes APIs, or
+   alters config/CLI behavior, update the relevant sections.
+7. Update `version`, `Cargo.toml`, and `static/icon/app.rc` with the new
+   version.
+8. Run `cargo check` to regenerate `Cargo.lock`.
+9. In `CHANGELOG.md`, insert a new `## [X.X.X]` section above the
    `[Unreleased]` section with the mapped entries grouped by category (Features
-   / Bug Fixes / Refactoring / Performance / Chores). Each entry must include
-   the full commit link.
-9. Delete the `Unreleased.md` file.
-10. Commit all changes with message `:bookmark: bump version to X.X.X`.
+   / Bug Fixes / Refactoring / Performance / Chores). Each entry puts the
+   description first, then commit hashes.
+10. Delete the `Unreleased.md` file.
+11. Commit all changes with message `:bookmark: bump version to X.X.X`.
 
 ## CHANGELOG Entry Format
 
-```
+CHANGELOG entries follow a **description-first** format: the macro-level
+summary from `Unreleased.md` comes first, with commit hashes appended after:
+
+```markdown
 ### Category
-- [`ab12cd3`](https://github.com/muutot/keymouse_monitor/commit/ab12cd3) (module) description
+- (module) description — [`ab12cd3`](url), [`ef4567`](url)
 ```
 
 Categories in order: Features, Bug Fixes, Refactoring, Performance, Chores.
