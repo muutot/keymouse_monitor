@@ -249,38 +249,44 @@ impl DatabaseBackend for MongoBackend {
         let key_count = data.len();
         let is_empty = data.is_empty();
         self.rt.block_on(async {
-            let mut models: Vec<WriteModel> = Vec::with_capacity(1 + key_count);
+            if data.is_empty() {
+                raw.delete_many(doc! { "date": date_str })
+                    .await
+                    .map_err(|e| format!("delete day stats: {e}"))?;
+            } else {
+                let mut models: Vec<WriteModel> = Vec::with_capacity(1 + key_count);
 
-            models.push(
-                DeleteManyModel::builder()
-                    .namespace(ns.clone())
-                    .filter(doc! { "date": date_str })
-                    .build()
-                    .into(),
-            );
-
-            for (key, count) in data.iter() {
                 models.push(
-                    InsertOneModel::builder()
+                    DeleteManyModel::builder()
                         .namespace(ns.clone())
-                        .document(doc! {
-                            "date": date_str,
-                            "key": key,
-                            "count": *count as i64,
-                        })
+                        .filter(doc! { "date": date_str })
                         .build()
                         .into(),
                 );
-            }
 
-            client
-                .bulk_write(models)
-                .await
-                .map_err(|e| format!("upsert day stats: {e}"))?;
+                for (key, count) in data.iter() {
+                    models.push(
+                        InsertOneModel::builder()
+                            .namespace(ns.clone())
+                            .document(doc! {
+                                "date": date_str,
+                                "key": key,
+                                "count": *count as i64,
+                            })
+                            .build()
+                            .into(),
+                    );
+                }
+
+                client
+                    .bulk_write(models)
+                    .await
+                    .map_err(|e| format!("upsert day stats: {e}"))?;
+            }
             let t1 = Instant::now();
 
             tdebug!("mongodb",
-                "upsert_day_stats({}): bulk_write={:?} ({} keys{})",
+                "upsert_day_stats({}): {:?} ({} keys{})",
                 date_str,
                 t1 - t0,
                 key_count,
@@ -303,27 +309,38 @@ impl DatabaseBackend for MongoBackend {
         }
 
         self.rt.block_on(async {
-            let models: Vec<WriteModel> = data
-                .iter()
-                .map(|(key, count)| {
-                    UpdateOneModel::builder()
-                        .namespace(ns.clone())
-                        .filter(doc! { "date": date_str, "key": key })
-                        .update(doc! { "$inc": { "count": *count as i64 } })
-                        .upsert(true)
-                        .build()
-                        .into()
-                })
-                .collect();
-
-            client
-                .bulk_write(models)
+            if data.len() == 1 {
+                let (key, count) = data.iter().next().unwrap();
+                raw.update_one(
+                    doc! { "date": date_str, "key": key },
+                    doc! { "$inc": { "count": *count as i64 } },
+                )
+                .upsert(true)
                 .await
-                .map_err(|e| format!("merge inc stats: {e}"))?;
+                .map_err(|e| format!("merge inc stat: {e}"))?;
+            } else {
+                let models: Vec<WriteModel> = data
+                    .iter()
+                    .map(|(key, count)| {
+                        UpdateOneModel::builder()
+                            .namespace(ns.clone())
+                            .filter(doc! { "date": date_str, "key": key })
+                            .update(doc! { "$inc": { "count": *count as i64 } })
+                            .upsert(true)
+                            .build()
+                            .into()
+                    })
+                    .collect();
+
+                client
+                    .bulk_write(models)
+                    .await
+                    .map_err(|e| format!("merge inc stats: {e}"))?;
+            }
             let t1 = Instant::now();
 
             tdebug!("mongodb",
-                "merge_incremental_stats({}): bulk_write={:?} ({} keys)",
+                "merge_incremental_stats({}): {:?} ({} keys)",
                 date_str,
                 t1 - t0,
                 key_count,

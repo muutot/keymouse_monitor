@@ -9,10 +9,17 @@ use crate::{
     tinfo,
 };
 
+/// Result of `prepare_save`.  `delta` is always populated for the
+/// current day; on a day-rollover `is_rollover` is set and the caller
+/// must persist yesterday's snapshot (accessible via `yesterday_snapshot`)
+/// before letting the in-memory state move on.  In `Diff` mode (the
+/// common case) callers only need `delta` and can ignore
+/// `yesterday_snapshot`.
 pub struct SaveResult {
     pub date: String,
-    pub snapshot: HashMap<String, u64>,
     pub delta: HashMap<String, u64>,
+    /// Snapshot of the *previous* day on rollover, otherwise empty.
+    pub yesterday_snapshot: HashMap<String, u64>,
     pub is_rollover: bool,
 }
 
@@ -75,24 +82,25 @@ impl MonitorData {
         }
     }
 
-    /// Merges incremental into base and returns a SaveResult.
-    /// The lock should be released before calling db.upsert_day_stats()
-    /// or db.merge_incremental_stats() with the returned data.
+    /// Merges incremental into base and returns a SaveResult.  In the
+    /// common `Diff` save path only `delta` is populated — the full
+    /// snapshot is no longer cloned on every tick.  On rollover, the
+    /// yesterday snapshot is taken once and stashed in the result.
     pub fn prepare_save(&mut self) -> Option<SaveResult> {
         let today_str = Local::now().format("%Y-%m-%d").to_string();
 
         if self.today != today_str {
-            // Rollover: return yesterday's data, reset for today
-            let yesterday = mem::take(&mut self.base_counts);
+            // Day rollover: base_counts belong to yesterday, so capture
+            // them and reset.
+            let yesterday_snapshot = mem::take(&mut self.base_counts);
             let old_today = mem::replace(&mut self.today, today_str);
-            // Move today's incremental into the now-empty base for next save
             for (key, value) in self.incremental_counts.drain() {
                 *self.base_counts.entry(key).or_insert(0) += value;
             }
             return Some(SaveResult {
                 date: old_today,
-                snapshot: yesterday,
                 delta: HashMap::new(),
+                yesterday_snapshot,
                 is_rollover: true,
             });
         }
@@ -101,15 +109,14 @@ impl MonitorData {
             return None;
         }
 
-        // Normal save: drain incremental into base, return delta + snapshot
         let delta = mem::take(&mut self.incremental_counts);
         for (key, value) in &delta {
             *self.base_counts.entry(key.clone()).or_insert(0) += value;
         }
         Some(SaveResult {
             date: self.today.clone(),
-            snapshot: self.base_counts.clone(),
             delta,
+            yesterday_snapshot: HashMap::new(),
             is_rollover: false,
         })
     }
@@ -117,14 +124,14 @@ impl MonitorData {
     pub fn save_to_db(&mut self, db: &mut Database, update_mode: &UpdateMode) {
         if let Some(result) = self.prepare_save() {
             if result.is_rollover {
-                db.upsert_day_stats(&result.date, &result.snapshot);
+                db.upsert_day_stats(&result.date, &result.yesterday_snapshot);
                 if !self.base_counts.is_empty() {
                     db.upsert_day_stats(&self.today, &self.base_counts);
                 }
             } else {
                 match update_mode {
                     UpdateMode::Diff => db.merge_incremental_stats(&result.date, &result.delta),
-                    UpdateMode::Full => db.upsert_day_stats(&result.date, &result.snapshot),
+                    UpdateMode::Full => db.upsert_day_stats(&result.date, &self.get_key_counts()),
                 }
             }
         }
@@ -299,8 +306,9 @@ mod tests {
         assert!(!result.is_rollover);
         assert_eq!(result.delta.get("a"), Some(&1));
         assert_eq!(result.delta.get("b"), Some(&1));
-        assert_eq!(result.snapshot.get("a"), Some(&1));
-        assert_eq!(result.snapshot.get("b"), Some(&1));
+        let snapshot = data.get_key_counts();
+        assert_eq!(snapshot.get("a"), Some(&1));
+        assert_eq!(snapshot.get("b"), Some(&1));
     }
 
     #[test]
@@ -315,7 +323,7 @@ mod tests {
         assert_eq!(result.date, "2000-01-01");
         assert!(result.is_rollover);
         assert!(result.delta.is_empty());
-        assert_eq!(result.snapshot.get("old"), Some(&42));
+        assert_eq!(result.yesterday_snapshot.get("old"), Some(&42));
     }
 
     #[test]

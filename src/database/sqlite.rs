@@ -216,22 +216,28 @@ impl DatabaseBackend for SqliteBackend {
             return Ok(());
         }
 
+        let tx = self.conn.unchecked_transaction()
+            .map_err(|e| format!("begin tx: {e}"))?;
+        let delete_sql = format!("DELETE FROM {} WHERE date = ?1", self.table_name);
+        tx.execute(&delete_sql, [date_str])
+            .map_err(|e| format!("delete: {e}"))?;
         let upsert_sql = format!(
             "INSERT OR REPLACE INTO {} (date, key, count) VALUES (?1, ?2, ?3)",
             self.table_name
         );
-        let mut stmt = self
-            .conn
-            .prepare_cached(&upsert_sql)
-            .map_err(|e| format!("prepare upsert: {e}"))?;
-        for (key, count) in data {
-            stmt.execute([date_str, key, &count.to_string()])
-                .map_err(|e| format!("upsert day stat: {e}"))?;
+        {
+            let mut stmt = tx.prepare_cached(&upsert_sql)
+                .map_err(|e| format!("prepare upsert: {e}"))?;
+            for (key, count) in data {
+                stmt.execute([date_str, key, &count.to_string()])
+                    .map_err(|e| format!("upsert day stat: {e}"))?;
+            }
         }
+        tx.commit().map_err(|e| format!("commit: {e}"))?;
         let elapsed = t0.elapsed();
 
         tdebug!("sqlite",
-            "upsert_day_stats({}): upsert={:?} ({} keys)",
+            "upsert_day_stats({}): tx={:?} ({} keys)",
             date_str,
             elapsed,
             key_count,
@@ -248,23 +254,26 @@ impl DatabaseBackend for SqliteBackend {
             return Ok(());
         }
 
+        let tx = self.conn.unchecked_transaction()
+            .map_err(|e| format!("begin tx: {e}"))?;
         let upsert_sql = format!(
             "INSERT INTO {} (date, key, count) VALUES (?1, ?2, ?3) \
              ON CONFLICT(date, key) DO UPDATE SET count = count + excluded.count",
             self.table_name
         );
-        let mut stmt = self
-            .conn
-            .prepare_cached(&upsert_sql)
-            .map_err(|e| format!("prepare inc upsert: {e}"))?;
-        for (key, count) in data {
-            stmt.execute([date_str, key, &count.to_string()])
-                .map_err(|e| format!("merge inc stat: {e}"))?;
+        {
+            let mut stmt = tx.prepare_cached(&upsert_sql)
+                .map_err(|e| format!("prepare inc upsert: {e}"))?;
+            for (key, count) in data {
+                stmt.execute([date_str, key, &count.to_string()])
+                    .map_err(|e| format!("merge inc stat: {e}"))?;
+            }
         }
+        tx.commit().map_err(|e| format!("commit: {e}"))?;
         let elapsed = t0.elapsed();
 
         tdebug!("sqlite",
-            "merge_incremental_stats({}): upsert={:?} ({} keys)",
+            "merge_incremental_stats({}): tx={:?} ({} keys)",
             date_str,
             elapsed,
             key_count,
@@ -383,14 +392,34 @@ impl DatabaseBackend for SqliteBackend {
         let dates: Vec<&str> = records_map.keys().map(|s| s.as_str()).collect();
 
         let existing_map: HashMap<String, HashMap<String, u64>> = if mode == ImportMode::Merge {
-            let mut map = HashMap::new();
-            for date in &dates {
-                let data = self.get_stats_for_day(date)?;
-                if !data.is_empty() {
-                    map.insert(date.to_string(), data);
+            if dates.is_empty() {
+                HashMap::new()
+            } else {
+                let placeholders = std::iter::repeat("?").take(dates.len()).collect::<Vec<_>>().join(",");
+                let sql = format!(
+                    "SELECT date, key, count FROM {} WHERE date IN ({})",
+                    self.table_name, placeholders
+                );
+                let mut stmt = self.conn.prepare_cached(&sql)
+                    .map_err(|e| format!("prepare import existing: {e}"))?;
+                let params: Vec<&dyn rusqlite::ToSql> =
+                    dates.iter().map(|d| d as &dyn rusqlite::ToSql).collect();
+                let mut map: HashMap<String, HashMap<String, u64>> = HashMap::new();
+                let rows = stmt
+                    .query_map(params.as_slice(), |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, i64>(2)?,
+                        ))
+                    })
+                    .map_err(|e| format!("query import existing: {e}"))?;
+                for r in rows {
+                    let (date, key, count) = r.map_err(|e| format!("row: {e}"))?;
+                    map.entry(date).or_default().insert(key, count as u64);
                 }
+                map
             }
-            map
         } else {
             HashMap::new()
         };

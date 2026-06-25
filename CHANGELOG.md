@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+- :zap: [database]: batch SQLite writes inside a transaction — the old code
+  ran each `INSERT` separately, paying fsync per row; `upsert_day_stats`
+  and `merge_incremental_stats` now wrap their statements in a single
+  `BEGIN…COMMIT`, collapsing 50+ fsyncs into one
+- :zap: [database]: use direct `update_one` on MongoDB single-key merges —
+  the bulk-write path is now only used when there is more than one key,
+  eliminating a wasteful round-trip envelope for the common single-key case
+- :zap: [data]: stop cloning the full snapshot on every save tick —
+  `SaveResult` now carries only the delta plus (on rollover) the yesterday
+  snapshot; the timer reads today's snapshot lazily only when
+  `update_mode = full` or a rollover occurs
+- :zap: [database]: collapse import merge into a single `IN (…)` query —
+  the previous code ran N+1 `get_stats_for_day` calls during a `merge`
+  import, replaced with one prepared statement
 - :bug: [database]: propagate `import_from_json` errors — previously the API
   returned 200 OK even when the import silently failed; now the actual error
   message is returned to the client

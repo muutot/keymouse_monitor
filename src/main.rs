@@ -1,5 +1,6 @@
 #![windows_subsystem = "windows"]
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, atomic::AtomicUsize, OnceLock};
 use std::time::Duration;
 
@@ -147,19 +148,42 @@ async fn main() {
                 if let Ok(mut db_guard) = db.lock() {
                     let _ = db_guard.try_reconnect();
                 }
-                let snapshot = {
+                enum Action {
+                    Diff { date: String, delta: HashMap<String, u64> },
+                    Full { date: String, snapshot: HashMap<String, u64> },
+                    Rollover { old_date: String, yesterday: HashMap<String, u64>, today: String, today_base: HashMap<String, u64> },
+                    Nothing,
+                }
+                let action: Action = {
                     let mut guard = data.write();
-                    guard.prepare_save()
+                    match guard.prepare_save() {
+                        Some(result) if result.is_rollover => Action::Rollover {
+                            old_date: result.date,
+                            yesterday: result.yesterday_snapshot,
+                            today: guard.today.clone(),
+                            today_base: guard.base_counts.clone(),
+                        },
+                        Some(result) => match mode {
+                            UpdateMode::Diff => Action::Diff { date: result.date, delta: result.delta },
+                            UpdateMode::Full => Action::Full { date: result.date, snapshot: guard.get_key_counts() },
+                        },
+                        None => Action::Nothing,
+                    }
                 };
-                if let Some(result) = snapshot {
-                    let mut db_guard = db.lock().unwrap();
-                    let db = &mut *db_guard;
-                    if result.is_rollover {
-                        db.upsert_day_stats(&result.date, &result.snapshot);
-                    } else {
-                        match mode {
-                            UpdateMode::Diff => db.merge_incremental_stats(&result.date, &result.delta),
-                            UpdateMode::Full => db.upsert_day_stats(&result.date, &result.snapshot),
+                let mut db_guard = db.lock().unwrap();
+                let db = &mut *db_guard;
+                match action {
+                    Action::Nothing => {}
+                    Action::Diff { date, delta } => {
+                        db.merge_incremental_stats(&date, &delta);
+                    }
+                    Action::Full { date, snapshot } => {
+                        db.upsert_day_stats(&date, &snapshot);
+                    }
+                    Action::Rollover { old_date, yesterday, today, today_base } => {
+                        db.upsert_day_stats(&old_date, &yesterday);
+                        if !today_base.is_empty() {
+                            db.upsert_day_stats(&today, &today_base);
                         }
                     }
                 }
