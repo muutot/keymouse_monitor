@@ -283,7 +283,7 @@ mod tests {
         assert_eq!(data.today, today);
         assert!(data.incremental_counts.is_empty());
         assert_eq!(data.base_counts.get("new_day"), Some(&1), "new day's data in base");
-        assert!(data.base_counts.get("old").is_none(), "yesterday's data cleared on rollover");
+        assert!(!data.base_counts.contains_key("old"), "yesterday's data cleared on rollover");
 
         let saved = db.get_stats_for_day(&today);
         assert_eq!(saved.get("new_day"), Some(&1), "new data in today's db entry");

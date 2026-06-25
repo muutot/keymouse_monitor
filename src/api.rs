@@ -198,7 +198,7 @@ async fn import_handler(
     let data = state.data.clone();
     let today = Local::now().format("%Y-%m-%d").to_string();
     let start = Instant::now();
-    let import_err = tokio::task::spawn_blocking(move || -> Result<(), String> {
+    tokio::task::spawn_blocking(move || -> Result<(), String> {
         let today_counts: HashMap<String, u64> = serde_json::from_str(&json_str)
             .ok()
             .and_then(|v: Value| {
@@ -230,7 +230,6 @@ async fn import_handler(
             Json(json!({"error": format!("Import failed: {}", e)})),
         )
     })?;
-    let _ = import_err;
     let duration_ms = start.elapsed().as_millis();
     tinfo!(
         "api",

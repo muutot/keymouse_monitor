@@ -395,7 +395,7 @@ impl DatabaseBackend for SqliteBackend {
             if dates.is_empty() {
                 HashMap::new()
             } else {
-                let placeholders = std::iter::repeat("?").take(dates.len()).collect::<Vec<_>>().join(",");
+                let placeholders = std::iter::repeat_n("?", dates.len()).collect::<Vec<_>>().join(",");
                 let sql = format!(
                     "SELECT date, key, count FROM {} WHERE date IN ({})",
                     self.table_name, placeholders
