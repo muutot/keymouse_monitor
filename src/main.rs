@@ -131,11 +131,14 @@ async fn main() {
     let update_mode_timer = config.update_mode.clone();
     let update_mode_shutdown = config.update_mode.clone();
 
+    let (export_progress_tx, _) = watch::channel(None);
+
     let state = AppState {
         data: Arc::clone(&data),
         db: Arc::clone(&db),
         change_tx,
         client_count,
+        export_progress: export_progress_tx,
     };
 
     // Cooperative shutdown: signal the timer to stop, then wait for it

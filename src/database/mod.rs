@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 
 use crate::config::{
     DatabaseConfig, FallbackConfig, FallbackSyncMode, MongoConfig, SqliteConfig,
@@ -7,6 +8,22 @@ use crate::{tinfo, twarn};
 
 mod mongodb;
 mod sqlite;
+
+pub struct ExportProgress {
+    pub total: AtomicU64,
+    pub current: AtomicU64,
+    pub done: AtomicBool,
+}
+
+impl ExportProgress {
+    pub fn new() -> Self {
+        Self {
+            total: AtomicU64::new(0),
+            current: AtomicU64::new(0),
+            done: AtomicBool::new(false),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BackendType {
@@ -43,7 +60,13 @@ pub trait DatabaseBackend: Send {
     fn get_stats_for_range(&self, start_date: &str, end_date: &str) -> Result<HashMap<String, u64>, String>;
     fn upsert_day_stats(&self, date_str: &str, data: &HashMap<String, u64>) -> Result<(), String>;
     fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) -> Result<(), String>;
-    fn export_to_json(&self, format: &str) -> Result<String, String>;
+    fn export_to_json(
+        &self,
+        format: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        progress: &ExportProgress,
+    ) -> Result<String, String>;
     fn import_from_json(&mut self, json_str: &str, mode: ImportMode) -> Result<(), String>;
     fn try_ping(&self) -> Result<(), String>;
     fn backend_type(&self) -> BackendType;
@@ -228,8 +251,20 @@ impl Database {
         })
     }
 
-    pub fn export_to_json(&self, format: &str) -> String {
-        self.read_with_fallback("export_to_json", |b| b.export_to_json(format))
+    pub fn export_to_json(
+        &self,
+        format: &str,
+        start: Option<&str>,
+        end: Option<&str>,
+        progress: &ExportProgress,
+    ) -> String {
+        match self.inner.export_to_json(format, start, end, progress) {
+            Ok(v) => v,
+            Err(e) => {
+                twarn!("database", "Export failed: {}", e);
+                String::new()
+            }
+        }
     }
 
     pub fn import_from_json(&mut self, json_str: &str, mode: ImportMode) -> Result<(), String> {

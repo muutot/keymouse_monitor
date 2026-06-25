@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use futures::TryStreamExt;
@@ -11,7 +12,7 @@ use tokio::runtime::Runtime;
 use crate::{tinfo, twarn, tdebug, config::MongoConfig};
 use keymouse_common::database::{build_uri, redact_credentials};
 
-use super::{BackendType, DatabaseBackend, ImportMode};
+use super::{BackendType, DatabaseBackend, ExportProgress, ImportMode};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FlatStat {
@@ -155,6 +156,24 @@ impl MongoBackend {
     fn flat_collection(&self) -> mongodb::Collection<FlatStat> {
         self.client.database(&self.db_name).collection(&self.collection_name)
     }
+}
+
+fn write_json_str(out: &mut String, s: &str) {
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => {
+                let _ = std::fmt::Write::write_fmt(&mut *out, format_args!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
 }
 
 impl DatabaseBackend for MongoBackend {
@@ -338,71 +357,129 @@ impl DatabaseBackend for MongoBackend {
         })
     }
 
-    fn export_to_json(&self, format: &str) -> Result<String, String> {
+    fn export_to_json(
+        &self,
+        format: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        progress: &ExportProgress,
+    ) -> Result<String, String> {
         let raw = self.raw_collection();
+
+        let mut filter = doc! {};
+        if let (Some(s), Some(e)) = (start_date, end_date) {
+            filter = doc! { "date": { "$gte": s, "$lte": e } };
+        }
+
         self.rt.block_on(async {
+            let total = raw
+                .count_documents(filter.clone())
+                .await
+                .map_err(|e| format!("count: {e}"))?;
+            progress.total.store(total, Ordering::Relaxed);
+
+            let pipeline = vec![
+                doc! { "$match": filter.clone() },
+                doc! { "$sort": { "date": 1, "key": 1 } },
+            ];
             let mut cursor = raw
-                .find(doc! {})
-                .sort(doc! { "date": 1, "key": 1 })
+                .aggregate(pipeline)
+                .allow_disk_use(true)
+                .batch_size(5000)
                 .await
                 .map_err(|e| format!("query export: {e}"))?;
 
-            let mut flat_rows: Vec<Document> = Vec::new();
-            while let Some(doc) = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))? {
-                flat_rows.push(doc);
-            }
+            let mut out = String::with_capacity((total as usize).saturating_mul(80));
+            let exported_at = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
 
-            match format {
+            out.push('{');
+            write_json_str(&mut out, "backend");
+            out.push_str(":\"mongodb\",");
+            write_json_str(&mut out, "exported_at");
+            out.push(':');
+            write_json_str(&mut out, &exported_at);
+            out.push_str(",\"records\":");
+
+            let processed = match format {
                 "flat" => {
-                    let records: Vec<serde_json::Value> = flat_rows
-                        .iter()
-                        .filter_map(|d| {
-                            let date = d.get_str("date").ok()?;
-                            let key = d.get_str("key").ok()?;
-                            let count = d.get_i64("count").unwrap_or(0);
-                            Some(serde_json::json!({
-                                "date": date,
-                                "key": key,
-                                "count": count,
-                            }))
-                        })
-                        .collect();
-
-                    let export = serde_json::json!({
-                        "backend": "mongodb",
-                        "exported_at": chrono::Local::now()
-                            .format("%Y-%m-%dT%H:%M:%S")
-                            .to_string(),
-                        "records": records,
-                    });
-                    serde_json::to_string(&export)
-                        .map_err(|e| format!("serialize: {e}"))
+                    out.push('[');
+                    let mut first = true;
+                    let mut current = 0u64;
+                    let mut last_pct = -1i32;
+                    while let Some(doc) = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))? {
+                        current += 1;
+                        let pct = if total > 0 { (current * 100 / total) as i32 } else { 0 };
+                        if pct != last_pct {
+                            progress.current.store(current, Ordering::Relaxed);
+                            tdebug!("mongodb", "export progress: {}% ({}/{})", pct, current, total);
+                            last_pct = pct;
+                        }
+                        if first {
+                            first = false;
+                        } else {
+                            out.push(',');
+                        }
+                        let date = doc.get_str("date").unwrap_or("");
+                        let key = doc.get_str("key").unwrap_or("");
+                        let cnt = doc.get_i64("count").unwrap_or(0);
+                        out.push_str("{\"date\":");
+                        write_json_str(&mut out, date);
+                        out.push_str(",\"key\":");
+                        write_json_str(&mut out, key);
+                        out.push_str(",\"count\":");
+                        out.push_str(&cnt.to_string());
+                        out.push('}');
+                    }
+                    out.push(']');
+                    current
                 }
                 _ => {
-                    let mut records = serde_json::Map::new();
-                    for d in &flat_rows {
-                        let date = d.get_str("date").unwrap_or("");
-                        let key = d.get_str("key").unwrap_or("");
-                        let count = d.get_i64("count").unwrap_or(0) as u64;
-                        let entry = records
-                            .entry(date.to_string())
-                            .or_insert_with(|| serde_json::json!({}));
-                        if let Some(obj) = entry.as_object_mut() {
-                            obj.insert(key.to_string(), serde_json::json!(count));
+                    out.push('{');
+                    let mut first_date = true;
+                    let mut current_date = String::new();
+                    let mut current = 0u64;
+                    let mut last_pct = -1i32;
+                    while let Some(doc) = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))? {
+                        current += 1;
+                        let pct = if total > 0 { (current * 100 / total) as i32 } else { 0 };
+                        if pct != last_pct {
+                            progress.current.store(current, Ordering::Relaxed);
+                            tdebug!("mongodb", "export progress: {}% ({}/{})", pct, current, total);
+                            last_pct = pct;
                         }
-                    }
+                        let date = doc.get_str("date").unwrap_or("");
+                        let key = doc.get_str("key").unwrap_or("");
+                        let cnt = doc.get_i64("count").unwrap_or(0);
 
-                    let export = serde_json::json!({
-                        "backend": "mongodb",
-                        "exported_at": chrono::Local::now()
-                            .format("%Y-%m-%dT%H:%M:%S")
-                            .to_string(),
-                        "records": records,
-                    });
-                    serde_json::to_string(&export)
-                        .map_err(|e| format!("serialize: {e}"))
+                        if date != current_date {
+                            if !first_date {
+                                out.push('}');
+                            }
+                            if first_date {
+                                first_date = false;
+                            } else {
+                                out.push(',');
+                            }
+                            current_date = date.to_string();
+                            write_json_str(&mut out, &current_date);
+                            out.push_str(":{");
+                        } else {
+                            out.push(',');
+                        }
+                        write_json_str(&mut out, key);
+                        out.push(':');
+                        out.push_str(&cnt.to_string());
+                    }
+                    if !first_date {
+                        out.push('}');
+                    }
+                    out.push('}');
+                    current
                 }
-            }
+            };
+            tdebug!("mongodb", "export cursor exhausted: processed={}, expected={}", processed, total);
+            out.push('}');
+            Ok(out)
         })
     }
 

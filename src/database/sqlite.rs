@@ -1,11 +1,12 @@
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use rusqlite::Connection;
 
 use crate::{tinfo, twarn, tdebug, config::SqliteConfig};
 
-use super::{BackendType, DatabaseBackend, ImportMode};
+use super::{BackendType, DatabaseBackend, ExportProgress, ImportMode};
 
 pub struct SqliteBackend {
     conn: Connection,
@@ -281,72 +282,145 @@ impl DatabaseBackend for SqliteBackend {
         Ok(())
     }
 
-    fn export_to_json(&self, format: &str) -> Result<String, String> {
-        let sql = format!(
-            "SELECT date, key, count FROM {} ORDER BY date, key",
-            self.table_name
-        );
-        let mut stmt = self
-            .conn
-            .prepare_cached(&sql)
+    fn export_to_json(
+        &self,
+        format: &str,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        progress: &ExportProgress,
+    ) -> Result<String, String> {
+        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match (start_date, end_date) {
+            (Some(s), Some(e)) => (
+                format!(
+                    "SELECT date, key, count FROM {} WHERE date >= ?1 AND date <= ?2 ORDER BY date, key",
+                    self.table_name
+                ),
+                vec![Box::new(s.to_string()), Box::new(e.to_string())],
+            ),
+            _ => (
+                format!(
+                    "SELECT date, key, count FROM {} ORDER BY date, key",
+                    self.table_name
+                ),
+                vec![],
+            ),
+        };
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        // Count total
+        let count_sql = if start_date.is_some() {
+            format!(
+                "SELECT COUNT(*) FROM {} WHERE date >= ?1 AND date <= ?2",
+                self.table_name
+            )
+        } else {
+            format!("SELECT COUNT(*) FROM {}", self.table_name)
+        };
+        let total: i64 = {
+            let mut stmt = self.conn.prepare_cached(&count_sql)
+                .map_err(|e| format!("prepare count: {e}"))?;
+            stmt.query_row(params_refs.as_slice(), |row| row.get::<_, i64>(0))
+                .map_err(|e| format!("count: {e}"))?
+        };
+        progress.total.store(total as u64, Ordering::Relaxed);
+
+        let mut stmt = self.conn.prepare_cached(&sql)
             .map_err(|e| format!("prepare export: {e}"))?;
-        let results: Vec<(String, String, i64)> = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                ))
-            })
-            .map_err(|e| format!("query export: {e}"))?
-            .filter_map(|r| r.ok())
-            .collect();
+        let mut rows = stmt.query(params_refs.as_slice())
+            .map_err(|e| format!("query export: {e}"))?;
 
-        match format {
+        let exported_at = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+        let mut out = String::with_capacity((total as usize).saturating_mul(80));
+
+        out.push('{');
+        write_json_str(&mut out, "backend");
+        out.push_str(":\"sqlite\",");
+        write_json_str(&mut out, "exported_at");
+        out.push(':');
+        write_json_str(&mut out, &exported_at);
+        out.push_str(",\"records\":");
+
+        let processed = match format {
             "flat" => {
-                let records: Vec<serde_json::Value> = results
-                    .iter()
-                    .map(|(date, key, count)| {
-                        serde_json::json!({
-                            "date": date,
-                            "key": key,
-                            "count": count,
-                        })
-                    })
-                    .collect();
-
-                let export = serde_json::json!({
-                    "backend": "sqlite",
-                    "exported_at": chrono::Local::now()
-                        .format("%Y-%m-%dT%H:%M:%S")
-                        .to_string(),
-                    "records": records,
-                });
-                serde_json::to_string(&export)
-                    .map_err(|e| format!("serialize: {e}"))
+                out.push('[');
+                let mut first = true;
+                let mut current = 0u64;
+                let mut last_pct = -1i32;
+                while let Some(row) = rows.next().map_err(|e| format!("row: {e}"))? {
+                    current += 1;
+                    let pct = if total > 0 { (current * 100 / total as u64) as i32 } else { 0 };
+                    if pct != last_pct {
+                        progress.current.store(current, Ordering::Relaxed);
+                        tdebug!("sqlite", "export progress: {}% ({}/{})", pct, current, total);
+                        last_pct = pct;
+                    }
+                    if first {
+                        first = false;
+                    } else {
+                        out.push(',');
+                    }
+                    let date: String = row.get(0).map_err(|e| format!("get date: {e}"))?;
+                    let key: String = row.get(1).map_err(|e| format!("get key: {e}"))?;
+                    let cnt: i64 = row.get(2).map_err(|e| format!("get count: {e}"))?;
+                    out.push_str("{\"date\":");
+                    write_json_str(&mut out, &date);
+                    out.push_str(",\"key\":");
+                    write_json_str(&mut out, &key);
+                    out.push_str(",\"count\":");
+                    out.push_str(&cnt.to_string());
+                    out.push('}');
+                }
+                out.push(']');
+                current
             }
             _ => {
-                let mut records = serde_json::Map::new();
-                for (date, key, count) in &results {
-                    let entry = records
-                        .entry(date.clone())
-                        .or_insert_with(|| serde_json::json!({}));
-                    if let Some(obj) = entry.as_object_mut() {
-                        obj.insert(key.clone(), serde_json::json!(count));
+                out.push('{');
+                let mut first_date = true;
+                let mut current_date = String::new();
+                let mut current = 0u64;
+                let mut last_pct = -1i32;
+                while let Some(row) = rows.next().map_err(|e| format!("row: {e}"))? {
+                    current += 1;
+                    let pct = if total > 0 { (current * 100 / total as u64) as i32 } else { 0 };
+                    if pct != last_pct {
+                        progress.current.store(current, Ordering::Relaxed);
+                        tdebug!("sqlite", "export progress: {}% ({}/{})", pct, current, total);
+                        last_pct = pct;
                     }
-                }
+                    let date: String = row.get(0).map_err(|e| format!("get date: {e}"))?;
+                    let key: String = row.get(1).map_err(|e| format!("get key: {e}"))?;
+                    let cnt: i64 = row.get(2).map_err(|e| format!("get count: {e}"))?;
 
-                let export = serde_json::json!({
-                    "backend": "sqlite",
-                    "exported_at": chrono::Local::now()
-                        .format("%Y-%m-%dT%H:%M:%S")
-                        .to_string(),
-                    "records": records,
-                });
-                serde_json::to_string(&export)
-                    .map_err(|e| format!("serialize: {e}"))
+                    if date != current_date {
+                        if !first_date {
+                            out.push('}');
+                        }
+                        if first_date {
+                            first_date = false;
+                        } else {
+                            out.push(',');
+                        }
+                        current_date = date;
+                        write_json_str(&mut out, &current_date);
+                        out.push_str(":{");
+                    } else {
+                        out.push(',');
+                    }
+                    write_json_str(&mut out, &key);
+                    out.push(':');
+                    out.push_str(&cnt.to_string());
+                }
+                if !first_date {
+                    out.push('}');
+                }
+                out.push('}');
+                current
             }
-        }
+        };
+        tdebug!("sqlite", "export cursor exhausted: processed={}, expected={}", processed, total);
+        out.push('}');
+        Ok(out)
     }
 
     fn import_from_json(&mut self, json_str: &str, mode: ImportMode) -> Result<(), String> {
@@ -468,4 +542,22 @@ impl DatabaseBackend for SqliteBackend {
         );
         Ok(())
     }
+}
+
+fn write_json_str(out: &mut String, s: &str) {
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => {
+                let _ = std::fmt::Write::write_fmt(&mut *out, format_args!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
 }

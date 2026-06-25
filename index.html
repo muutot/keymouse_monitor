@@ -1097,7 +1097,11 @@
 <div class="modal-overlay" id="export-modal">
   <div class="modal-box">
     <h2>导出数据</h2>
-    <p class="subtitle">选择导出格式</p>
+    <p class="subtitle">选择日期范围和导出格式</p>
+    <label>开始日期</label>
+    <input type="date" id="export-start" style="width:100%;padding:8px;background:#2a2a2a;color:#e0e0e0;border:1px solid #444;border-radius:5px;box-sizing:border-box;">
+    <label style="margin-top:8px;">结束日期</label>
+    <input type="date" id="export-end" style="width:100%;padding:8px;background:#2a2a2a;color:#e0e0e0;border:1px solid #444;border-radius:5px;box-sizing:border-box;">
     <label>格式</label>
     <div class="mode-group">
       <label><input type="radio" name="export-format" value="nested" checked> 嵌套</label>
@@ -1107,6 +1111,13 @@
       <button class="btn-cancel" id="export-cancel">取消</button>
       <button class="btn-import" id="export-confirm">导出</button>
     </div>
+  </div>
+</div>
+
+<div id="loading-overlay">
+  <div id="loading-box">
+    <p>查询历史数据中…</p>
+    <div id="loading-bar-track"><div id="loading-bar-fill"></div></div>
   </div>
 </div>
 
@@ -1457,8 +1468,17 @@
   const exportOverlay = document.getElementById('export-modal');
   const exportConfirm = document.getElementById('export-confirm');
   const exportCancel = document.getElementById('export-cancel');
+  const exportStart = document.getElementById('export-start');
+  const exportEnd = document.getElementById('export-end');
+
+  const exportLoadingOverlay = document.getElementById('loading-overlay');
+  const exportLoadingFill = document.getElementById('loading-bar-fill');
+  const exportLoadingText = document.querySelector('#loading-box p');
 
   document.getElementById('export-btn').addEventListener('click', () => {
+    const today = new Date().toISOString().split('T')[0];
+    exportStart.value = startDateInput.value || today;
+    exportEnd.value = endDateInput.value || today;
     exportOverlay.classList.add('active');
   });
 
@@ -1472,37 +1492,64 @@
 
   exportConfirm.addEventListener('click', async () => {
     const fmt = document.querySelector('input[name="export-format"]:checked').value;
+    const start = exportStart.value;
+    const end = exportEnd.value;
     exportConfirm.disabled = true;
+    exportOverlay.classList.remove('active');
+
+    // Show progress overlay
+    exportLoadingText.textContent = '正在导出数据…';
+    exportLoadingFill.style.width = '0%';
+    exportLoadingOverlay.classList.add('show');
+
+    // Reactive progress via SSE
+    const es = new EventSource(`${API_URL}/api/export/progress/stream`);
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.idle) return;
+        const pct = data.total > 0 ? Math.min(95, Math.round(data.current / data.total * 100)) : 0;
+        exportLoadingFill.style.width = pct + '%';
+        if (data.current > 0) {
+          exportLoadingText.textContent = `正在导出数据… ${data.current}/${data.total}`;
+        }
+        if (data.done) {
+          exportLoadingFill.style.width = '100%';
+          es.close();
+        }
+      } catch (_) {}
+    };
+    es.onerror = () => { es.close(); };
+
     try {
-      const response = await fetch(`${API_URL}/api/export?format=${fmt}&pretty=true`);
+      let url = `${API_URL}/api/export?format=${fmt}&pretty=true&_=${Date.now()}`;
+      if (start) url += `&start=${start}`;
+      if (end) url += `&end=${end}`;
+      const response = await fetch(url);
+      es.close();
       if (!response.ok) throw new Error('Export failed');
+      exportLoadingFill.style.width = '100%';
       const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url;
+      a.href = blobUrl;
       a.download = `keymonitor-export-${new Date().toISOString().split('T')[0]}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      exportOverlay.classList.remove('active');
+      URL.revokeObjectURL(blobUrl);
     } catch (e) {
+      es.close();
       alert('导出失败: ' + e.message);
     } finally {
       exportConfirm.disabled = false;
+      setTimeout(() => { exportLoadingOverlay.classList.remove('show'); }, 400);
     }
   });
 
   window.addEventListener('load', initialize);
 
 </script>
-
-<div id="loading-overlay">
-  <div id="loading-box">
-    <p>查询历史数据中…</p>
-    <div id="loading-bar-track"><div id="loading-bar-fill"></div></div>
-  </div>
-</div>
 
 </body>
 </html>

@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+- :sparkles: [export]: streaming JSON export with reactive SSE progress —
+  replaces loading-all-into-memory with per-cursor streaming via
+  `write_json_str`; adds date-range filtering, percentage-boundary progress
+  updates, and a frontend progress bar driven by `EventSource`
+- :bug: [export]: fix "trailing characters at line 1 column 10" crash caused
+  by missing `{` prefix in generated JSON output
+- :zap: [export,mongodb]: switch from `find()` to `aggregate($match+$sort)`
+  with `allow_disk_use(true)` and `batch_size(5000)` for better Atlas
+  compatibility and reduced memory pressure
+
 ## [2.2.0]
 
 ### Features
