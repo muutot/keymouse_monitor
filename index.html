@@ -1293,6 +1293,10 @@
   function connectSSE() {
     eventSource = new EventSource(`${API_URL}/events`);
 
+    eventSource.onopen = function() {
+      statusDisplay.textContent = '当前模式: 实时数据';
+    };
+
     eventSource.onmessage = function(event) {
       try {
         const currentData = JSON.parse(event.data);
