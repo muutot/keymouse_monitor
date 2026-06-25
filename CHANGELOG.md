@@ -2,95 +2,57 @@
 
 ## [Unreleased]
 
-- :bug: [frontend]: treat SSE payload as a delta, not a full snapshot —
-  when a per-keypress delta `{a: 13}` arrived, the previous handler
-  iterated over every key in `lastLiveData` and reset any key not in
-  the payload to `0`, which produced constant flicker on every
-  keypress and an all-zero main display.  Now iterates only over the
-  payload's keys, so missing keys keep their previous value
-- :bug: [frontend]: filter 0-count keys out of Top-N — after a day
-  rollover, the backend sends `{key: 0}` for cleared keys, which would
-  otherwise crowd the Top-N ranking with rows showing 0
-- :bug: [main]: restore the leading `interval.tick().await` on the save
-  timer — the earlier removal would have delayed the first save by a
-  full `save_interval_secs`, losing any keypress captured in that window
-  on a crash or hard power-off.  `tokio::time::interval`'s first tick
-  completes immediately, so pre-ticking gives us a save on startup
-  followed by the normal period
-- :bug: [main]: use `Notify::notify_one` (not `notify_waiters`) from the
-  Windows console handler — `notify_waiters` does not store a permit,
-  so a Ctrl+C that fires before the waiter in `wait_for_shutdown` is
-  registered would be lost.  `notify_one` retains a single permit, so
-  the late-registered future still wakes up
-- :bug: [api]: drop the silent `unwrap_or` on `to_string_pretty` in the
-  export handler — pretty-printing a `serde_json::Value` cannot fail,
-  but the silent fallback would have masked a real bug; replaced with
-  `expect` documenting the invariant.  The response-builder `map_err`
-  is similarly collapsed to `expect` since a static `Content-Type`
-  header cannot fail to construct
-- :art: [listener]: silence `clippy::wildcard_imports` on the FFI import
-  blocks in `native.rs` and `rawinput.rs` — the windows_sys surface area
-  is dozens of constants per module and listing each by hand just adds
-  noise
-- :bug: [main]: report the bound address on listener failure — the
-  `TcpListener::bind` error path now prints the address it tried to bind
-  to, making "address already in use" failures much easier to diagnose
-- :zap: [database]: emit compact JSON from export — `export_to_json` no
-  longer formats with `to_string_pretty` only to have axum re-parse and
-  re-serialize the result.  The API now streams the raw compact string
-  to clients, and pretty-printing is only applied when the caller asks
-  for it via the new `?pretty=true` query parameter (used by the
-  frontend's file download)
-- :sparkles: [frontend]: make `API_URL` configurable — accept an explicit
+- :zap: [api]: push deltas over SSE instead of full snapshots — each event
+  after the first carries only the keys whose count actually changed; the
+  first message on every (re)connect is still a full snapshot, so the
+  frontend always has a complete picture.  Per-event JSON size drops from
+  the entire key map to just the changed subset
+- :zap: [database]: batch SQLite writes inside a transaction —
+  `upsert_day_stats` and `merge_incremental_stats` now wrap statements in
+  `BEGIN…COMMIT`, collapsing multiple fsyncs into one per save cycle
+- :zap: [data]: stop cloning the full snapshot on every save tick —
+  `SaveResult` now carries only the delta plus (on rollover) yesterday's
+  snapshot; the timer reads today's snapshot lazily only when a full
+  upsert is requested or a rollover occurs
+- :zap: [database]: fix N+1 query in `import_from_json` — batch all date
+  lookups into a single `WHERE date IN (…)` instead of one query per date
+  during Merge-mode import
+- :zap: [database]: emit compact JSON from export — streams the raw string
+  without round-tripping through `serde_json::Value`; `?pretty=true` query
+  parameter re-enables human-readable formatting for file downloads
+- :sparkles: [frontend]: make `API_URL` configurable — accept
   `?api=http://host:port` query parameter, fall back to
-  `window.location.origin` (the page is served by the backend, so the same
-  origin is correct), and only fall back to the legacy hard-coded
-  `http://127.0.0.1:5000` if neither is available
-- :bug: [frontend]: exponential backoff on SSE reconnect — repeated
-  connection failures now back off 1s, 2s, 4s, 8s, 16s, 30s (capped) with
-  up to 500ms of jitter, instead of hammering the server every 3s when
-  the backend is down
-- :zap: [listener]: skip `WM_MOUSEMOVE` conversion in the native backend —
-  `msg_to_event` now returns `None` for mouse-move messages instead of
-  constructing an `EventType::MouseMove` that the caller then discards
-  inside the `MouseMove` matches! check, saving a small allocation on
-  every cursor move
+  `window.location.origin`, then to the legacy `http://127.0.0.1:5000`
+- :bug: [frontend]: exponential backoff on SSE reconnect — 1s, 2s, 4s,
+  8s, 16s, 30s (capped) with jitter instead of a fixed 3s retry interval
 - :recycle: [listener]: replace `&str` listener kind with a typed
   `ListenerKind` enum — typo'd config values no longer silently fall
-  through to rdev, and dispatch becomes a match on an exhaustive enum
-  so adding a new backend forces a compile error at the call site
-- :zap: [api]: push deltas over SSE instead of full snapshots — each event
-  after the first now carries only the keys whose count actually changed;
-  the first message on every (re)connect is still a full snapshot, so the
-  frontend always has a complete picture.  Per-event JSON size drops from
-  the entire key map to just the changed subset.
-- :wrench: [config]: remove unused `use_server_aggregation` field — both
-  backends always use server-side aggregation (SQL `SUM/GROUP BY` and
-  MongoDB `$group`), so the field had no effect; removed from
-  `DatabaseConfig`, the SQLite constructor, and the README example
-- :art: [core]: rename timer-save `db` shadow to `db_guard` and the
-  import-handler lock binding to `db_guard` for consistency with the
-  rest of the codebase
-- :zap: [database]: batch SQLite writes inside a transaction — the old code
-  ran each `INSERT` separately, paying fsync per row; `upsert_day_stats`
-  and `merge_incremental_stats` now wrap their statements in a single
-  `BEGIN…COMMIT`, collapsing 50+ fsyncs into one
-- :zap: [data]: stop cloning the full snapshot on every save tick —
-  `SaveResult` now carries only the delta plus (on rollover) the yesterday
-  snapshot; the timer reads today's snapshot lazily only when
-  `update_mode = full` or a rollover occurs
-- :zap: [database]: collapse import merge into a single `IN (…)` query —
-  the previous code ran N+1 `get_stats_for_day` calls during a `merge`
-  import, replaced with one prepared statement
-- :bug: [database]: propagate `import_from_json` errors — previously the API
-  returned 200 OK even when the import silently failed; now the actual error
-  message is returned to the client
-- :bug: [mongodb]: replace `panic!` on URI parse failure with graceful
-  fallback — the process now boots with a placeholder client and retries on
-  each save, matching the existing behavior for connection failures
+  through to rdev, and adding a new backend forces a compile error at
+  every dispatch site
+- :zap: [listener]: skip `WM_MOUSEMOVE` conversion in the native backend —
+  `msg_to_event` returns `None` for mouse-move messages instead of
+  constructing an `EventType::MouseMove` that the caller then discards
 - :recycle: [main]: replace `OS_SHUTDOWN` 200 ms busy-poll with
   `tokio::sync::Notify` — Ctrl+C handlers notify a wait group directly,
-  eliminating the 5 wake-ups/sec CPU usage
+  eliminating 5 wake-ups/sec of CPU usage from the polling loop
+- :bug: [main]: report the bound address on `TcpListener::bind` failure —
+  the error message now includes the address, making "address already in
+  use" failures much easier to diagnose
+- :bug: [database]: propagate `import_from_json` errors — previously the
+  API returned 200 OK even when the import silently failed; now the actual
+  error message is returned to the client
+- :bug: [mongodb]: replace `panic!` on URI parse failure with a graceful
+  fallback — the process boots with a placeholder client and retries
+  connection on each save cycle
+- :wrench: [config]: remove unused `use_server_aggregation` field — both
+  backends always use server-side aggregation, so the field was dead
+  configuration surface
+- :art: [listener]: silence `clippy::wildcard_imports` on the FFI import
+  blocks in `native.rs` and `rawinput.rs`
+- :art: [core]: clean up new clippy warnings across the codebase
+- :wrench: [skills]: add `branch-diff-review` skill — reviews the diff
+  between the current branch and a base ref for bugs, optimizations, and
+  missed modifications
 - :wrench: [scripts]: add `changelog_fmt` Rust crate — `format-changelog`
   and `check-changelog` binaries auto-rewrap CHANGELOG to 88-char fill
   without needing Python at runtime
