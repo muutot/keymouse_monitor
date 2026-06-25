@@ -7,7 +7,12 @@ use parking_lot::RwLock;
 use rdev::{Button, EventType};
 use tokio::sync::watch;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+// FFI wildcard imports are conventional: the windows_sys surface area is
+// dozens of constants per module, and listing each by hand just adds noise
+// to the call sites.
+#[allow(clippy::wildcard_imports)]
 use windows_sys::Win32::UI::Input::*;
+#[allow(clippy::wildcard_imports)]
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 use crate::{

@@ -6,6 +6,7 @@ use std::thread;
 use parking_lot::RwLock;
 use rdev::{Button, EventType};
 use tokio::sync::watch;
+#[allow(clippy::wildcard_imports)]
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 

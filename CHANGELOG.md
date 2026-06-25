@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- :art: [listener]: silence `clippy::wildcard_imports` on the FFI import
+  blocks in `native.rs` and `rawinput.rs` — the windows_sys surface area
+  is dozens of constants per module and listing each by hand just adds
+  noise
+- :bug: [main]: report the bound address on listener failure — the
+  `TcpListener::bind` error path now prints the address it tried to bind
+  to, making "address already in use" failures much easier to diagnose
 - :zap: [database]: emit compact JSON from export — `export_to_json` no
   longer formats with `to_string_pretty` only to have axum re-parse and
   re-serialize the result.  The API now streams the raw compact string
