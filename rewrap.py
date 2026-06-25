@@ -5,7 +5,7 @@ def split_entry_text(full):
     if not m:
         m = re.search(r'\s—\s(\((?:\s*\[[^\]]*\]\([^)]*\)[,\s]*)+\))$', full)
     if m:
-        desc = full[:m.start()].strip()
+        desc = full[:m.start()].strip().rstrip('—').strip()
         link_str = m.group(1).strip()
         return desc, ' — ' + link_str
     return full.strip(), ''

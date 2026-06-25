@@ -32,10 +32,15 @@ metadata:
    functionally does — not what files changed, but what capabilities were added,
    what bugs were fixed, how the architecture changed.
 9. **Write/append a macro-level entry under `## [Unreleased]` in
-   `CHANGELOG.md`** from a code-level perspective. Insert the new entry right
-   after the `## [Unreleased]` heading, on a new line (bullet point), before
-   any existing entries in that section. Format: markdown bullet list, wrap at
-   88 chars, keep it concise.
+   `CHANGELOG.md`** from a code-level perspective.
+   - Insert the new entry right after the `## [Unreleased]` heading, before
+     any existing entries in that section. Format: markdown bullet list, wrap
+     at 88 chars, keep it concise.
+   - **Same-cycle fix**: if the change is a bugfix/improvement for something
+     already listed in `[Unreleased]` (same scope and topic), **do not add a
+     new entry** — instead update the existing entry's description to include
+     the fix. Only stand-alone bugfixes targeting an **already-released
+     version** (not in `[Unreleased]`) get their own `:bug:` entry.
 10. **Stage `CHANGELOG.md` together with the code changes**, so the summary is
     committed as part of this commit.
 11. Proceed with committing.

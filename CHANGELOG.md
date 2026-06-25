@@ -2,9 +2,11 @@
 
 ## [Unreleased]
 
-- :art: [cli]: add `-h`/`--help` to all binaries
-- :memo: [changelog] rewrap all entries at 88 display chars (`[`hash`](url)` = 0 display
-  chars); add `rewrap.py` helper; update commit/release skills for the zero-count rule
+- :memo: [changelog] rewrap all entries at 88 display chars (hash links
+  count as 0 display chars); add `rewrap.py` helper; update commit/release
+  skills for zero-count hash rule; fix `— —` double separator when
+  description ends with `—` before multi-hash group
+- :sparkles: [cli]: add `-h`/`--help` to all binaries
 
 ## [2.1.0]
 
@@ -17,12 +19,12 @@
 ### Refactoring
 - (core) extract `keymouse-common` and `keymouse-rawinput` library crates — tools
   and main binary now depend on shared crates; raw input logic (window creation,
-  device registration, raw data reading) moved to reusable library — — ([`e22ad9f`](https://github.com/muutot/keymouse_monitor/commit/e22ad9f), [`31aec76`](https://github.com/muutot/keymouse_monitor/commit/31aec76), [`47d22ed`](https://github.com/muutot/keymouse_monitor/commit/47d22ed))
+  device registration, raw data reading) moved to reusable library — ([`e22ad9f`](https://github.com/muutot/keymouse_monitor/commit/e22ad9f), [`31aec76`](https://github.com/muutot/keymouse_monitor/commit/31aec76), [`47d22ed`](https://github.com/muutot/keymouse_monitor/commit/47d22ed))
 
 ### Chores
 - (ci) update release workflow and gitignore — [`1bc9b53`](https://github.com/muutot/keymouse_monitor/commit/1bc9b53)
 - (workflow) replace githook-based auto-changelog with `[Unreleased]`-section
-  workflow — commits write macro summaries into CHANGELOG.md — — ([`1325675`](https://github.com/muutot/keymouse_monitor/commit/1325675), [`ca2b3b7`](https://github.com/muutot/keymouse_monitor/commit/ca2b3b7), [`924fa2d`](https://github.com/muutot/keymouse_monitor/commit/924fa2d), [`72d12cd`](https://github.com/muutot/keymouse_monitor/commit/72d12cd))
+  workflow — commits write macro summaries into CHANGELOG.md — ([`1325675`](https://github.com/muutot/keymouse_monitor/commit/1325675), [`ca2b3b7`](https://github.com/muutot/keymouse_monitor/commit/ca2b3b7), [`924fa2d`](https://github.com/muutot/keymouse_monitor/commit/924fa2d), [`72d12cd`](https://github.com/muutot/keymouse_monitor/commit/72d12cd))
 - (changelog) reformat all historical entries to description-first format — [`eeed664`](https://github.com/muutot/keymouse_monitor/commit/eeed664)
 
 ## [2.0.1]
@@ -216,6 +218,7 @@
 - (project) initialize key-monitor — [`59351f3`](https://github.com/muutot/keymouse_monitor/commit/59351f3)
 - change `run_timer` to use non-repeating timer and update `Timer` class — [`6f1d41b`](https://github.com/muutot/keymouse_monitor/commit/6f1d41b)
 - (ci) add GitHub Actions release workflow and version file — [`4d6a3c4`](https://github.com/muutot/keymouse_monitor/commit/4d6a3c4)
+
 
 
 
