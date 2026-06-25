@@ -1201,6 +1201,7 @@
 
   function updateTopN(data) {
     const sortedKeys = Object.entries(data)
+      .filter(([, count]) => count > 0)
       .map(([key, count]) => ({ key, count }))
       .sort((a, b) => b.count - a.count);
 
@@ -1222,7 +1223,12 @@
 
 
   /**
-   * Handles incoming live data from SSE and updates only the keys that have changed.
+   * Handles incoming live data from SSE.
+   *
+   * currentData may be a full snapshot (first event after subscribe /
+   * reconnect) or a partial delta (subsequent events).  When it is a
+   * delta, only the keys present in the object have changed; missing
+   * keys must keep their previous value.
    */
   function handleLiveData(currentData) {
     let animate = Object.keys(lastLiveData).length > 0;
@@ -1230,25 +1236,18 @@
       isHistory = false;
       animate = false;
     }
-    const allKeys = new Set([...Object.keys(lastLiveData), ...Object.keys(currentData)]);
     let hadChange = false;
-    allKeys.forEach(key => {
+    for (const key of Object.keys(currentData)) {
       const oldValue = lastLiveData[key] || 0;
-      const newValue = currentData[key] || 0;
+      const newValue = currentData[key];
       if (oldValue !== newValue) {
         updateElement(key, newValue, animate);
         hadChange = true;
       }
-    });
+      lastLiveData[key] = newValue;
+    }
 
     if (hadChange) {
-      // Merge into lastLiveData first, then derive Top-N from the full set.
-      // SSE may send either a full snapshot (first event) or a partial
-      // delta (subsequent events), so the merged view is required for a
-      // correct ranking.
-      for (const key of Object.keys(currentData)) {
-        lastLiveData[key] = currentData[key];
-      }
       updateTopN(lastLiveData);
     }
   }

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- :bug: [frontend]: treat SSE payload as a delta, not a full snapshot —
+  when a per-keypress delta `{a: 13}` arrived, the previous handler
+  iterated over every key in `lastLiveData` and reset any key not in
+  the payload to `0`, which produced constant flicker on every
+  keypress and an all-zero main display.  Now iterates only over the
+  payload's keys, so missing keys keep their previous value
+- :bug: [frontend]: filter 0-count keys out of Top-N — after a day
+  rollover, the backend sends `{key: 0}` for cleared keys, which would
+  otherwise crowd the Top-N ranking with rows showing 0
 - :bug: [main]: restore the leading `interval.tick().await` on the save
   timer — the earlier removal would have delayed the first save by a
   full `save_interval_secs`, losing any keypress captured in that window
