@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- :recycle: [listener]: replace `&str` listener kind with a typed
+  `ListenerKind` enum — typo'd config values no longer silently fall
+  through to rdev, and dispatch becomes a match on an exhaustive enum
+  so adding a new backend forces a compile error at the call site
 - :zap: [api]: push deltas over SSE instead of full snapshots — each event
   after the first now carries only the keys whose count actually changed;
   the first message on every (re)connect is still a full snapshot, so the

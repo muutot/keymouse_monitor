@@ -14,12 +14,32 @@ mod native;
 mod rawinput;
 mod rdev;
 
-pub fn start(kind: &str, data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, client_count: Arc<AtomicUsize>) {
+pub enum ListenerKind {
+    #[cfg(windows)]
+    Native,
+    #[cfg(windows)]
+    RawInput,
+    Rdev,
+}
+
+impl ListenerKind {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            #[cfg(windows)]
+            "native" => Self::Native,
+            #[cfg(windows)]
+            "rawinput" => Self::RawInput,
+            _ => Self::Rdev,
+        }
+    }
+}
+
+pub fn start(kind: ListenerKind, data: Arc<RwLock<MonitorData>>, change_tx: watch::Sender<()>, client_count: Arc<AtomicUsize>) {
     match kind {
         #[cfg(windows)]
-        "native" => native::start(data, change_tx, client_count),
+        ListenerKind::Native => native::start(data, change_tx, client_count),
         #[cfg(windows)]
-        "rawinput" => rawinput::start(data, change_tx, client_count),
-        _ => rdev::start(data, change_tx, client_count),
+        ListenerKind::RawInput => rawinput::start(data, change_tx, client_count),
+        ListenerKind::Rdev => rdev::start(data, change_tx, client_count),
     }
 }
