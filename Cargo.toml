@@ -7,6 +7,7 @@ members = [
     "tools/key_viewer",
     "tools/mouse_bench",
     "tools/db_check",
+    "tools/changelog_fmt",
 ]
 
 [package]

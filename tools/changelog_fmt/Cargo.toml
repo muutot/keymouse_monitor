@@ -1,0 +1,24 @@
+[package]
+name = "changelog_fmt"
+version = "0.1.0"
+edition = "2021"
+description = "Format and check CHANGELOG.md entries to 88-char fill"
+license = "MIT"
+
+[lib]
+name = "changelog_fmt"
+path = "src/lib.rs"
+
+[[bin]]
+name = "format-changelog"
+path = "src/bin/format.rs"
+
+[[bin]]
+name = "check-changelog"
+path = "src/bin/check.rs"
+
+[dependencies]
+regex = "1"
+
+[dev-dependencies]
+regex = "1"

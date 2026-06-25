@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-- :wrench: [scripts]: add `format-changelog.py` — auto-rewrap CHANGELOG to
-  88-char fill, replaces manual rewrap workflow; refactor `check-changelog.py`
-  to expose `check()` API and add unit tests
+- :wrench: [scripts]: add `changelog_fmt` Rust crate — `format-changelog`
+  and `check-changelog` binaries auto-rewrap CHANGELOG to 88-char fill
+  without needing Python at runtime
 
 ## [2.1.1]
 

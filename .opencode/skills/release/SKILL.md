@@ -54,13 +54,13 @@ metadata:
    commit hashes appended.
 10. **Reformat CHANGELOG to 88-char fill**:
      ```bash
-     python scripts/format-changelog.py CHANGELOG.md > /tmp/fmt.md && mv /tmp/fmt.md CHANGELOG.md
+     cargo run --release -p changelog_fmt --bin format-changelog -- CHANGELOG.md > /tmp/fmt.md && mv /tmp/fmt.md CHANGELOG.md
      ```
-     The script handles every formatting rule below automatically. The unit
-     tests at `.opencode/skills/release/test-format-changelog.py` use
-     `.opencode/skills/release/check-changelog.py` as the oracle; run them
-     with `python .opencode/skills/release/test-format-changelog.py` if you
-     change the formatter.
+     The Rust tool (`tools/changelog_fmt/`) handles every formatting rule
+     below automatically. The unit tests are part of the same crate; run
+     them with `cargo test -p changelog_fmt` if you change the formatter.
+     To verify a CHANGELOG without rewriting it, use the
+     `check-changelog` binary.
 11. Commit all changes with message `:bookmark: bump version to X.X.X`.
 
 ## CHANGELOG Entry Format
