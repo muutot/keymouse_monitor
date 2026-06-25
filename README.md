@@ -1,4 +1,4 @@
-# Key Monitor v2.1.1
+# Key Monitor v2.2.0
 
 Real-time keyboard and mouse click statistics with a visual UI. Backend records input events via Windows hooks or rdev, stores counts in SQLite or MongoDB, and serves a live-updating HTML frontend.
 
@@ -120,10 +120,10 @@ On non-Windows only `"rdev"` is available and selected automatically. Unknown va
 |---|---|---|
 | `GET` | `/keycounts` | Current in-memory counts as JSON `{"key": count, ...}` |
 | `GET` | `/history?start=YYYY-MM-DD&end=YYYY-MM-DD` | Aggregated stats for a date range |
-| `GET` | `/events` | SSE stream — pushes full count JSON on each key/button press |
+| `GET` | `/events` | SSE stream — pushes delta JSON on each key/button press; first event per connection is a full snapshot |
 | `GET` | `/api/export` | Full database export as JSON |
 | `POST` | `/api/import?mode=overwrite\|merge` | Import JSON data from export format |
-| `GET` | `/api/version` | `{"version": "2.1.1", "name": "keymouse-monitor"}` |
+| `GET` | `/api/version` | `{"version": "2.2.0", "name": "keymouse-monitor"}` |
 
 ### SSE format (`/events`)
 
@@ -131,7 +131,10 @@ On non-Windows only `"rdev"` is available and selected automatically. Unknown va
 data: {"a": 42, "enter": 7, "mouse_left": 3, ...}\n\n
 ```
 
-Fires on every key/button/wheel event (only when at least one SSE client is connected).
+The first event after a (re)connect is a full snapshot of all keys; subsequent
+events carry only the keys whose count changed since the last push (delta).
+Fires on every key/button/wheel event (only when at least one SSE client is
+connected).
 
 ### Export / Import JSON format
 
@@ -219,9 +222,9 @@ CI (GitHub Actions) builds on push to `main` that modifies the `version` file; a
 ├── static/
 │   ├── svg/                  # SVG assets (logo)
 │   └── icon/                 # Auto-generated icon (app.ico, app.rc)
-├── build.rs                  # Auto-generates app.ico from SVG
+├── scripts/build.rs          # Auto-generates app.ico from SVG
 ├── CHANGELOG.md              # Version history
 ├── config.json               # Optional config file
-├── version                   # Version string for CI (2.1.1)
+├── version                   # Version string for CI (2.2.0)
 └── Cargo.toml
 ```
