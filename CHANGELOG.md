@@ -5,6 +5,8 @@
 - :sparkles: [cli]: add `-h`/`--help` to all 4 binaries
 - :bug: [frontend]: fix SSE status text stuck on "正在重连" after reconnect
   succeeds — add `onopen` handler to reset status on connection established
+- :bug: [frontend]: fix export/import/version using relative URLs — use
+  `${API_URL}` prefix so they work from external static hosting
 - :memo: [changelog]: rewrap all entries at 88 display chars (hash links
   count as 0); add `rewrap.py` helper; update commit/release skills for
   zero-count hash rule
