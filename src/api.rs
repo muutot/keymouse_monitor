@@ -180,7 +180,7 @@ async fn import_handler(
     let data = state.data.clone();
     let today = Local::now().format("%Y-%m-%d").to_string();
     let start = Instant::now();
-    tokio::task::spawn_blocking(move || {
+    let import_err = tokio::task::spawn_blocking(move || -> Result<(), String> {
         let today_counts: HashMap<String, u64> = serde_json::from_str(&json_str)
             .ok()
             .and_then(|v: Value| {
@@ -193,18 +193,26 @@ async fn import_handler(
 
         let mut guard = data.write();
         let mut db = db.lock().unwrap();
-        db.import_from_json(&json_str, mode);
+        db.import_from_json(&json_str, mode)?;
         if !today_counts.is_empty() {
             guard.import_today_data(&today_counts, mode);
         }
+        Ok(())
     })
     .await
     .map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "Database import failed."})),
+            Json(json!({"error": "Database import task panicked."})),
+        )
+    })?
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": format!("Import failed: {}", e)})),
         )
     })?;
+    let _ = import_err;
     let duration_ms = start.elapsed().as_millis();
     tinfo!(
         "api",

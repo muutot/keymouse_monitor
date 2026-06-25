@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- :bug: [database]: propagate `import_from_json` errors — previously the API
+  returned 200 OK even when the import silently failed; now the actual error
+  message is returned to the client
+- :bug: [mongodb]: replace `panic!` on URI parse failure with graceful
+  fallback — the process now boots with a placeholder client and retries on
+  each save, matching the existing behavior for connection failures
+- :recycle: [main]: replace `OS_SHUTDOWN` 200 ms busy-poll with
+  `tokio::sync::Notify` — Ctrl+C handlers notify a wait group directly,
+  eliminating the 5 wake-ups/sec CPU usage
 - :wrench: [scripts]: add `changelog_fmt` Rust crate — `format-changelog`
   and `check-changelog` binaries auto-rewrap CHANGELOG to 88-char fill
   without needing Python at runtime

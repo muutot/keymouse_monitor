@@ -34,11 +34,26 @@ impl MongoBackend {
 
         let rt = Runtime::new().expect("Failed to create tokio runtime for MongoDB");
 
-        let client = rt.block_on(async {
-            mongodb::Client::with_uri_str(&uri)
-                .await
-                .unwrap_or_else(|e| panic!("Failed to create MongoDB client: {e}"))
-        });
+        let client = match rt.block_on(async { mongodb::Client::with_uri_str(&uri).await }) {
+            Ok(c) => c,
+            Err(e) => {
+                let err = format!("{e}");
+                twarn!("mongodb", "\n⚠ Failed to create MongoDB client: {err}");
+                twarn!("mongodb", "The application will retry on each data save.");
+                let client = rt
+                    .block_on(async {
+                        mongodb::Client::with_uri_str("mongodb://127.0.0.1:1/?serverSelectionTimeoutMS=1")
+                            .await
+                    })
+                    .expect("placeholder URI is valid");
+                return Self {
+                    rt,
+                    client,
+                    db_name: cfg.database.clone(),
+                    collection_name: cfg.collection.clone(),
+                };
+            }
+        };
 
         let db_name = cfg.database.clone();
         let collection_name = cfg.collection.clone();

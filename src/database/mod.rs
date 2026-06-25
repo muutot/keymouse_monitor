@@ -193,7 +193,10 @@ impl Database {
     /// Attempt to reconnect the primary and sync fallback.
     /// Returns true if reconnection and sync succeeded.
     pub fn try_reconnect(&mut self) -> bool {
-        if !self.is_mongodb || !self.disconnected {
+        if !self.is_mongodb {
+            return true;
+        }
+        if !self.disconnected {
             return true;
         }
         match self.inner.try_ping() {
@@ -232,10 +235,8 @@ impl Database {
         self.read_with_fallback("export_to_json", |b| b.export_to_json(format))
     }
 
-    pub fn import_from_json(&mut self, json_str: &str, mode: ImportMode) {
-        if let Err(e) = self.inner.import_from_json(json_str, mode) {
-            twarn!("database", "Import failed: {}", e);
-        }
+    pub fn import_from_json(&mut self, json_str: &str, mode: ImportMode) -> Result<(), String> {
+        self.inner.import_from_json(json_str, mode)
     }
 
     #[allow(dead_code)]

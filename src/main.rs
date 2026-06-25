@@ -1,10 +1,10 @@
 #![windows_subsystem = "windows"]
 
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicUsize, Ordering}};
+use std::sync::{Arc, Mutex, atomic::AtomicUsize, OnceLock};
 use std::time::Duration;
 
 use parking_lot::RwLock;
-use tokio::sync::watch;
+use tokio::sync::{watch, Notify};
 
 mod api;
 mod config;
@@ -19,11 +19,13 @@ use data::MonitorData;
 use database::Database;
 
 #[cfg(windows)]
-static OS_SHUTDOWN: AtomicBool = AtomicBool::new(false);
+static OS_SHUTDOWN: OnceLock<Notify> = OnceLock::new();
 
 #[cfg(windows)]
 unsafe extern "system" fn console_ctrl_handler(_: u32) -> i32 {
-    OS_SHUTDOWN.store(true, Ordering::SeqCst);
+    if let Some(n) = OS_SHUTDOWN.get() {
+        n.notify_waiters();
+    }
     1
 }
 
@@ -62,6 +64,7 @@ OPTIONS:
 async fn wait_for_shutdown() {
     #[cfg(windows)]
     {
+        let notify = OS_SHUTDOWN.get_or_init(Notify::new);
         unsafe {
             windows_sys::Win32::System::Console::SetConsoleCtrlHandler(
                 Some(console_ctrl_handler),
@@ -70,11 +73,7 @@ async fn wait_for_shutdown() {
         }
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {},
-            _ = async {
-                while !OS_SHUTDOWN.load(Ordering::Relaxed) {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
-                }
-            } => {},
+            _ = notify.notified() => {},
         }
     }
     #[cfg(not(windows))]
@@ -135,7 +134,6 @@ async fn main() {
     let timer_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(save_interval));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        interval.tick().await;
         loop {
             tokio::select! {
                 _ = interval.tick() => {}
