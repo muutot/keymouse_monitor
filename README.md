@@ -39,8 +39,7 @@ Create a `config.json` next to the executable (optional — all fields have defa
       "username": "user",
       "password": "pass",
       "collection": "daily_stats"
-    },
-    "use_server_aggregation": true
+    }
   },
   "port": 5000,
   "listener": "rawinput",
@@ -61,7 +60,6 @@ Create a `config.json` next to the executable (optional — all fields have defa
 | `backend` | string | `"sqlite"` | `"sqlite"` or `"mongodb"` |
 | `sqlite` | object | `{path: "monitor.sqlite", table: "daily_stats"}` | SQLite settings |
 | `mongodb` | object | (see below) | MongoDB connection settings |
-| `use_server_aggregation` | bool | `true` | Use SQL/aggregation pipeline for range queries vs. client-side sum |
 
 #### `database.sqlite` fields
 

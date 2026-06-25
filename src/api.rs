@@ -192,8 +192,8 @@ async fn import_handler(
             .unwrap_or_default();
 
         let mut guard = data.write();
-        let mut db = db.lock().unwrap();
-        db.import_from_json(&json_str, mode)?;
+        let mut db_guard = db.lock().unwrap();
+        db_guard.import_from_json(&json_str, mode)?;
         if !today_counts.is_empty() {
             guard.import_today_data(&today_counts, mode);
         }

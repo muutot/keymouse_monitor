@@ -171,19 +171,18 @@ async fn main() {
                     }
                 };
                 let mut db_guard = db.lock().unwrap();
-                let db = &mut *db_guard;
                 match action {
                     Action::Nothing => {}
                     Action::Diff { date, delta } => {
-                        db.merge_incremental_stats(&date, &delta);
+                        db_guard.merge_incremental_stats(&date, &delta);
                     }
                     Action::Full { date, snapshot } => {
-                        db.upsert_day_stats(&date, &snapshot);
+                        db_guard.upsert_day_stats(&date, &snapshot);
                     }
                     Action::Rollover { old_date, yesterday, today, today_base } => {
-                        db.upsert_day_stats(&old_date, &yesterday);
+                        db_guard.upsert_day_stats(&old_date, &yesterday);
                         if !today_base.is_empty() {
-                            db.upsert_day_stats(&today, &today_base);
+                            db_guard.upsert_day_stats(&today, &today_base);
                         }
                     }
                 }

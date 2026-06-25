@@ -58,7 +58,7 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new_sqlite(cfg: &SqliteConfig, _use_server_aggregation: bool) -> Self {
+    pub fn new_sqlite(cfg: &SqliteConfig) -> Self {
         Database {
             inner: Box::new(sqlite::SqliteBackend::new(cfg)),
             fallback: None,
@@ -95,7 +95,7 @@ impl Database {
 
     pub fn connect(db_cfg: &DatabaseConfig) -> Self {
         match BackendType::from_str(&db_cfg.backend) {
-            BackendType::Sqlite => Self::new_sqlite(&db_cfg.sqlite, false),
+            BackendType::Sqlite => Self::new_sqlite(&db_cfg.sqlite),
             BackendType::MongoDb => {
                 Self::new_mongodb_with_fallback(&db_cfg.mongodb, db_cfg.mongodb.fallback.as_ref())
             }
@@ -104,13 +104,10 @@ impl Database {
 
     #[allow(dead_code)]
     pub fn new(db_file: &str) -> Self {
-        Self::new_sqlite(
-            &SqliteConfig {
-                path: db_file.to_string(),
-                table: "daily_stats".to_string(),
-            },
-            false,
-        )
+        Self::new_sqlite(&SqliteConfig {
+            path: db_file.to_string(),
+            table: "daily_stats".to_string(),
+        })
     }
 
     /// Try primary; on failure write to fallback and mark disconnected.

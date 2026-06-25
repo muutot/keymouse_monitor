@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- :wrench: [config]: remove unused `use_server_aggregation` field — both
+  backends always use server-side aggregation (SQL `SUM/GROUP BY` and
+  MongoDB `$group`), so the field had no effect; removed from
+  `DatabaseConfig`, the SQLite constructor, and the README example
+- :art: [core]: rename timer-save `db` shadow to `db_guard` and the
+  import-handler lock binding to `db_guard` for consistency with the
+  rest of the codebase
 - :zap: [database]: batch SQLite writes inside a transaction — the old code
   ran each `INSERT` separately, paying fsync per row; `upsert_day_stats`
   and `merge_incremental_stats` now wrap their statements in a single
