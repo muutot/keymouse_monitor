@@ -386,7 +386,7 @@ impl DatabaseBackend for MongoBackend {
                             .to_string(),
                         "records": records,
                     });
-                    serde_json::to_string_pretty(&export)
+                    serde_json::to_string(&export)
                         .map_err(|e| format!("serialize: {e}"))
                 }
                 _ => {
@@ -410,7 +410,7 @@ impl DatabaseBackend for MongoBackend {
                             .to_string(),
                         "records": records,
                     });
-                    serde_json::to_string_pretty(&export)
+                    serde_json::to_string(&export)
                         .map_err(|e| format!("serialize: {e}"))
                 }
             }

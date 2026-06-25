@@ -124,12 +124,16 @@ async fn get_history(
 #[derive(Deserialize)]
 pub struct ExportParams {
     pub format: Option<String>,
+    /// When set to `true`, return pretty-printed JSON for human-readable
+    /// file downloads.  Default is compact, which the frontend re-serializes
+    /// either way and the import endpoint accepts.
+    pub pretty: Option<bool>,
 }
 
 async fn export_handler(
     State(state): State<AppState>,
     Query(params): Query<ExportParams>,
-) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+) -> Result<axum::response::Response, (StatusCode, Json<Value>)> {
     let fmt = params.format.as_deref().unwrap_or("nested");
     if fmt != "nested" && fmt != "flat" {
         return Err((
@@ -137,6 +141,7 @@ async fn export_handler(
             Json(json!({"error": "Invalid format, use 'nested' or 'flat'."})),
         ));
     }
+    let pretty = params.pretty.unwrap_or(false);
     let db = state.db.clone();
     let fmt_owned = fmt.to_string();
     let json_str = tokio::task::spawn_blocking(move || {
@@ -150,13 +155,26 @@ async fn export_handler(
             Json(json!({"error": "Database export failed."})),
         )
     })?;
-    let value: Value = serde_json::from_str(&json_str).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": format!("Failed to serialize export: {}", e)})),
-        )
-    })?;
-    Ok(Json(value))
+    let body = if pretty {
+        let value: Value = serde_json::from_str(&json_str).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": format!("Failed to re-parse export: {}", e)})),
+            )
+        })?;
+        serde_json::to_string_pretty(&value).unwrap_or(json_str)
+    } else {
+        json_str
+    };
+    axum::response::Response::builder()
+        .header("content-type", "application/json")
+        .body(axum::body::Body::from(body))
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": format!("Failed to build response: {}", e)})),
+            )
+        })
 }
 
 #[derive(Deserialize)]

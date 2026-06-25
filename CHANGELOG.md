@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- :zap: [database]: emit compact JSON from export — `export_to_json` no
+  longer formats with `to_string_pretty` only to have axum re-parse and
+  re-serialize the result.  The API now streams the raw compact string
+  to clients, and pretty-printing is only applied when the caller asks
+  for it via the new `?pretty=true` query parameter (used by the
+  frontend's file download)
 - :sparkles: [frontend]: make `API_URL` configurable — accept an explicit
   `?api=http://host:port` query parameter, fall back to
   `window.location.origin` (the page is served by the backend, so the same
