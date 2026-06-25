@@ -23,11 +23,7 @@ static mut CB: Option<common::CallbackData> = None;
 
 unsafe extern "system" fn hook_callback(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 {
-        let event_type = msg_to_event(wparam, lparam);
-        if let Some(et) = event_type {
-            if matches!(et, EventType::MouseMove { .. }) {
-                return CallNextHookEx(null_mut(), code, wparam, lparam);
-            }
+        if let Some(et) = msg_to_event(wparam, lparam) {
             if let Some(ref cb) = CB {
                 common::process_event(&et, cb);
             }
@@ -65,10 +61,7 @@ unsafe fn msg_to_event(wparam: WPARAM, lparam: LPARAM) -> Option<EventType> {
             let code = (mouse.mouseData >> 16) as u8;
             Some(EventType::ButtonRelease(Button::Unknown(code)))
         }
-        WM_MOUSEMOVE => {
-            let mouse = &*(lparam as *const MSLLHOOKSTRUCT);
-            Some(EventType::MouseMove { x: mouse.pt.x as f64, y: mouse.pt.y as f64 })
-        }
+        WM_MOUSEMOVE => None,
         WM_MOUSEWHEEL => {
             let mouse = &*(lparam as *const MSLLHOOKSTRUCT);
             let delta = (mouse.mouseData >> 16) as i16;

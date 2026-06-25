@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- :zap: [listener]: skip `WM_MOUSEMOVE` conversion in the native backend —
+  `msg_to_event` now returns `None` for mouse-move messages instead of
+  constructing an `EventType::MouseMove` that the caller then discards
+  inside the `MouseMove` matches! check, saving a small allocation on
+  every cursor move
 - :recycle: [listener]: replace `&str` listener kind with a typed
   `ListenerKind` enum — typo'd config values no longer silently fall
   through to rdev, and dispatch becomes a match on an exhaustive enum
