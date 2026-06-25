@@ -8,10 +8,9 @@
 - :bug: [frontend]: fix export/import/version using relative URLs — use
   `${API_URL}` prefix so they work from external static hosting
 - :memo: [changelog]: rewrap all entries at 88 display chars (hash links
-  count as 0); add `rewrap.py` helper; update commit/release skills for
-  zero-count hash rule
-- :wrench: [build]: add `build.sh` release script; add `exe/` to
-  `.gitignore`
+  count as 0)
+- :wrench: [build]: consolidate build scripts into `scripts/` directory;
+  add `exe/` to `.gitignore`
 
 ## [2.1.0]
 
