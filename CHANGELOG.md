@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- :wrench: [scripts]: add `format-changelog.py` — auto-rewrap CHANGELOG to
+  88-char fill, replaces manual rewrap workflow; refactor `check-changelog.py`
+  to expose `check()` API and add unit tests
+
 ## [2.1.1]
 
 ### Features

@@ -52,10 +52,15 @@ metadata:
    [X.X.X]`**, keeping all entries. Group them by category (Features / Bug
    Fixes / Refactoring / Performance / Chores), still description-first with
    commit hashes appended.
-10. **Verify** CHANGELOG formatting. Run `python .opencode/skills/release/check-changelog.py`
-     to check for two violations: (a) hash link without description on same
-     line, (b) continuation line with mergeable word (fits on previous line
-     within 88 chars). Fix any violations before committing.
+10. **Reformat CHANGELOG to 88-char fill**:
+     ```bash
+     python scripts/format-changelog.py CHANGELOG.md > /tmp/fmt.md && mv /tmp/fmt.md CHANGELOG.md
+     ```
+     The script handles every formatting rule below automatically. The unit
+     tests at `.opencode/skills/release/test-format-changelog.py` use
+     `.opencode/skills/release/check-changelog.py` as the oracle; run them
+     with `python .opencode/skills/release/test-format-changelog.py` if you
+     change the formatter.
 11. Commit all changes with message `:bookmark: bump version to X.X.X`.
 
 ## CHANGELOG Entry Format
@@ -68,39 +73,10 @@ summary from `[Unreleased]` section comes first, with commit hashes appended:
 - (module) description — [`ab12cd3`](url), [`ef4567`](url)
 ```
 
-- **88-char fill** — each line should reach ≤ 88 display characters.
-  `[`hash`](url)` counts as 0 (neither URL nor hash text displayed).
-  For multi-line entries, if a continuation line's first word fits on the
-  previous line without exceeding 88 chars, it must be merged up. The check
-   in step 10 flags violations.
-
-**Hash placement**: the `— [`hash`](url)` sequence must never be split across
-lines, and must never appear on a line by itself. The hash always shares a
-line with descriptive text.
-
-- Single hash: inline on the first line of the entry if it fits within 88
-  display chars; otherwise on the last continuation line alongside remaining
-  description text.
-  ```
-  ✓ - (db) add MongoDB fallback — [`a1b2c3d`](url)
-  ✓ - (frontend) fix SSE reconnect status — add `onopen` handler to reset status on
-    connection established — [`e4f5g6h`](url)
-  ✗ - (frontend) fix SSE reconnect status — add `onopen` handler to reset status on
-    connection established
-    — [`e4f5g6h`](url)
-  ```
-  The last line `  — [`e4f5g6h`](url)` has no descriptive text — the hash
-  **must** be on the same line as `onopen` handler to reset...`.
-
-- Multiple hashes: group inside parentheses on the last continuation line,
-  preceded by description text
-  `  description — ([`hash1`](url), [`hash2`](url), ...)`.
-  **All hashes and parentheses must be on the same line** — never split
-  across lines. Wrong:
-  ```
-    description — ([`hash1`](url),
-    [`hash2`](url))
-  ```
+You write the entry in this shape; `scripts/format-changelog.py` (step 10)
+re-wraps it to ≤ 88 display chars per line. Hash links count as 0 display
+chars. For multi-hash entries the hashes stay grouped on one line as
+`([h1](url), [h2](url), ...)`.
 
 Categories in order: Features, Bug Fixes, Refactoring, Performance, Chores.
 
