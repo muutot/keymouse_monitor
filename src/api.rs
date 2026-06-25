@@ -240,16 +240,40 @@ async fn sse_handler(
     let guard = SseConnectionGuard::new(state.client_count.clone());
 
     let stream = futures::stream::unfold(
-        (data, rx, true, guard),
-        |(data, mut rx, first, guard)| async move {
+        (data, rx, true, HashMap::<String, u64>::new(), guard),
+        |(data, mut rx, first, mut last, guard)| async move {
             if !first && rx.changed().await.is_err() {
                 return None;
             }
             let json = {
-                let guard = data.read();
-                serde_json::to_string(&guard.get_key_counts()).unwrap()
+                let current = {
+                    let guard = data.read();
+                    guard.get_key_counts()
+                };
+                if first {
+                    // Initial connection: send the entire snapshot.
+                    last = current.clone();
+                    serde_json::to_string(&current).unwrap()
+                } else {
+                    // Compute the delta of changed keys since the last push.
+                    let mut delta = serde_json::Map::new();
+                    for (key, count) in &current {
+                        if last.get(key) != Some(count) {
+                            delta.insert(key.clone(), serde_json::json!(count));
+                        }
+                    }
+                    // Detect keys that disappeared (shouldn't happen in our
+                    // data model, but defensively).
+                    for key in last.keys() {
+                        if !current.contains_key(key) {
+                            delta.insert(key.clone(), serde_json::json!(0));
+                        }
+                    }
+                    last = current;
+                    serde_json::to_string(&delta).unwrap()
+                }
             };
-            Some((Ok(Event::default().data(json)), (data, rx, false, guard)))
+            Some((Ok(Event::default().data(json)), (data, rx, false, last, guard)))
         },
     );
 

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- :zap: [api]: push deltas over SSE instead of full snapshots — each event
+  after the first now carries only the keys whose count actually changed;
+  the first message on every (re)connect is still a full snapshot, so the
+  frontend always has a complete picture.  Per-event JSON size drops from
+  the entire key map to just the changed subset.
 - :wrench: [config]: remove unused `use_server_aggregation` field — both
   backends always use server-side aggregation (SQL `SUM/GROUP BY` and
   MongoDB `$group`), so the field had no effect; removed from

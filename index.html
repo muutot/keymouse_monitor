@@ -1230,8 +1230,14 @@
     });
 
     if (hadChange) {
-      updateTopN(currentData);
-      lastLiveData = currentData;
+      // Merge into lastLiveData first, then derive Top-N from the full set.
+      // SSE may send either a full snapshot (first event) or a partial
+      // delta (subsequent events), so the merged view is required for a
+      // correct ranking.
+      for (const key of Object.keys(currentData)) {
+        lastLiveData[key] = currentData[key];
+      }
+      updateTopN(lastLiveData);
     }
   }
 
