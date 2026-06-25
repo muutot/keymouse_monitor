@@ -1,16 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [2.1.1]
 
-- :sparkles: [cli]: add `-h`/`--help` to all 4 binaries
-- :bug: [frontend]: fix SSE status text stuck on "正在重连" after reconnect
-  succeeds — add `onopen` handler to reset status on connection established
-- :bug: [frontend]: fix export/import/version using relative URLs — use
-  `${API_URL}` prefix so they work from external static hosting
-- :memo: [changelog]: rewrap all entries at 88 display chars (hash links
-  count as 0)
-- :wrench: [build]: consolidate build scripts into `scripts/` directory;
-  add `exe/` to `.gitignore`
+### Features
+- (cli) add `-h`/`--help` to all 4 binaries — [`d0de40a`](https://github.com/muutot/keymouse_monitor/commit/d0de40a)
+
+### Bug Fixes
+- (frontend) fix SSE status stuck on "正在重连" — add `onopen` to reset on reconnect — [`7ccb9eb`](https://github.com/muutot/keymouse_monitor/commit/7ccb9eb)
+- (frontend) fix export/import/version using relative URLs — use `${API_URL}` prefix so
+  they work from external static hosting — [`cc849b8`](https://github.com/muutot/keymouse_monitor/commit/cc849b8)
+
+### Chores
+- (changelog) rewrap all entries at 88 display chars (hash links count as 0) — [`498ad19`](https://github.com/muutot/keymouse_monitor/commit/498ad19)
+- (build) consolidate build scripts into `scripts/` directory; add `exe/` to
+  `.gitignore` — [`8d1c295`](https://github.com/muutot/keymouse_monitor/commit/8d1c295)
 
 ## [2.1.0]
 
