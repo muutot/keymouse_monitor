@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+- :bug: [main]: restore the leading `interval.tick().await` on the save
+  timer — the earlier removal would have delayed the first save by a
+  full `save_interval_secs`, losing any keypress captured in that window
+  on a crash or hard power-off.  `tokio::time::interval`'s first tick
+  completes immediately, so pre-ticking gives us a save on startup
+  followed by the normal period
+- :bug: [main]: use `Notify::notify_one` (not `notify_waiters`) from the
+  Windows console handler — `notify_waiters` does not store a permit,
+  so a Ctrl+C that fires before the waiter in `wait_for_shutdown` is
+  registered would be lost.  `notify_one` retains a single permit, so
+  the late-registered future still wakes up
+- :bug: [api]: drop the silent `unwrap_or` on `to_string_pretty` in the
+  export handler — pretty-printing a `serde_json::Value` cannot fail,
+  but the silent fallback would have masked a real bug; replaced with
+  `expect` documenting the invariant.  The response-builder `map_err`
+  is similarly collapsed to `expect` since a static `Content-Type`
+  header cannot fail to construct
 - :art: [listener]: silence `clippy::wildcard_imports` on the FFI import
   blocks in `native.rs` and `rawinput.rs` — the windows_sys surface area
   is dozens of constants per module and listing each by hand just adds

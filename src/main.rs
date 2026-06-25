@@ -25,7 +25,11 @@ static OS_SHUTDOWN: OnceLock<Notify> = OnceLock::new();
 #[cfg(windows)]
 unsafe extern "system" fn console_ctrl_handler(_: u32) -> i32 {
     if let Some(n) = OS_SHUTDOWN.get() {
-        n.notify_waiters();
+        // notify_one (not notify_waiters): if the waiter hasn't been
+        // registered yet, a permit is stored and the next
+        // notified().await will complete immediately.  notify_waiters
+        // would drop the signal entirely in that race.
+        n.notify_one();
     }
     1
 }
@@ -140,6 +144,12 @@ async fn main() {
     let timer_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(save_interval));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        // tokio::time::interval's first tick completes immediately, so this
+        // pre-tick ensures the first real save happens *now* on startup
+        // rather than after a full save_interval delay.  Without it, any
+        // keypress in the first save_interval seconds would be lost on
+        // a crash.
+        interval.tick().await;
         loop {
             tokio::select! {
                 _ = interval.tick() => {}

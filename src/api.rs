@@ -162,19 +162,18 @@ async fn export_handler(
                 Json(json!({"error": format!("Failed to re-parse export: {}", e)})),
             )
         })?;
-        serde_json::to_string_pretty(&value).unwrap_or(json_str)
+        // to_string_pretty only fails on a non-serializable Value, which
+        // cannot happen because we just produced this Value from the
+        // same JSON via serde_json.
+        serde_json::to_string_pretty(&value).expect("Value came from valid JSON")
     } else {
         json_str
     };
-    axum::response::Response::builder()
+    // Response builder with a static Content-Type cannot fail at runtime.
+    Ok(axum::response::Response::builder()
         .header("content-type", "application/json")
         .body(axum::body::Body::from(body))
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error": format!("Failed to build response: {}", e)})),
-            )
-        })
+        .expect("static response builder"))
 }
 
 #[derive(Deserialize)]
