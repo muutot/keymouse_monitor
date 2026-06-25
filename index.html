@@ -1111,8 +1111,20 @@
 </div>
 
 <script>
-  const API_URL = 'http://127.0.0.1:5000';
+  // API_URL: prefer an explicit ?api=... query parameter, fall back to the
+  // origin of the page itself (the backend serves index.html on the same
+  // port), and finally to the legacy 127.0.0.1:5000 default.
+  const API_URL = (() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromQuery = params.get('api');
+    if (fromQuery) return fromQuery.replace(/\/+$/, '');
+    if (window.location.protocol && window.location.host) {
+      return window.location.origin;
+    }
+    return 'http://127.0.0.1:5000';
+  })();
   let eventSource = null;
+  let reconnectAttempts = 0;
   let reconnectTimer = null;
   let lastLiveData = {};
   let isHistory = false;
@@ -1300,6 +1312,7 @@
     eventSource = new EventSource(`${API_URL}/events`);
 
     eventSource.onopen = function() {
+      reconnectAttempts = 0;
       statusDisplay.textContent = '当前模式: 实时数据';
     };
 
@@ -1313,14 +1326,18 @@
     };
 
     eventSource.onerror = function() {
-      statusDisplay.textContent = '连接断开, 正在自动重连...';
       eventSource.close();
       eventSource = null;
+      reconnectAttempts += 1;
+      // Exponential backoff with jitter, capped at 30s.
+      const baseDelay = Math.min(30000, 1000 * Math.pow(2, Math.min(reconnectAttempts - 1, 5)));
+      const delay = baseDelay + Math.floor(Math.random() * 500);
+      statusDisplay.textContent = `连接断开, ${Math.round(delay / 1000)}s 后重连 (尝试 ${reconnectAttempts})`;
       if (reconnectTimer) clearTimeout(reconnectTimer);
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         connectSSE();
-      }, 3000);
+      }, delay);
     };
   }
 
@@ -1346,6 +1363,7 @@
       eventSource.close();
       eventSource = null;
     }
+    reconnectAttempts = 0;
   }
 
   /**

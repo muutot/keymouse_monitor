@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- :sparkles: [frontend]: make `API_URL` configurable — accept an explicit
+  `?api=http://host:port` query parameter, fall back to
+  `window.location.origin` (the page is served by the backend, so the same
+  origin is correct), and only fall back to the legacy hard-coded
+  `http://127.0.0.1:5000` if neither is available
+- :bug: [frontend]: exponential backoff on SSE reconnect — repeated
+  connection failures now back off 1s, 2s, 4s, 8s, 16s, 30s (capped) with
+  up to 500ms of jitter, instead of hammering the server every 3s when
+  the backend is down
 - :zap: [listener]: skip `WM_MOUSEMOVE` conversion in the native backend —
   `msg_to_event` now returns `None` for mouse-move messages instead of
   constructing an `EventType::MouseMove` that the caller then discards
