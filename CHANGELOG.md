@@ -2,11 +2,12 @@
 
 ## [Unreleased]
 
-- :memo: [changelog] rewrap all entries at 88 display chars (hash links
-  count as 0 display chars); add `rewrap.py` helper; update commit/release
-  skills for zero-count hash rule; fix `— —` double separator when
-  description ends with `—` before multi-hash group
-- :sparkles: [cli]: add `-h`/`--help` to all binaries
+- :sparkles: [cli]: add `-h`/`--help` to all 4 binaries
+- :memo: [changelog]: rewrap all entries at 88 display chars (hash links
+  count as 0); add `rewrap.py` helper; update commit/release skills for
+  zero-count hash rule
+- :wrench: [build]: add `build.sh` release script; add `exe/` to
+  `.gitignore`
 
 ## [2.1.0]
 

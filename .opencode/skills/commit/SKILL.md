@@ -31,16 +31,20 @@ metadata:
 8. Read the actual diff of the staged changes. Analyze what the code
    functionally does — not what files changed, but what capabilities were added,
    what bugs were fixed, how the architecture changed.
-9. **Write/append a macro-level entry under `## [Unreleased]` in
-   `CHANGELOG.md`** from a code-level perspective.
-   - Insert the new entry right after the `## [Unreleased]` heading, before
-     any existing entries in that section. Format: markdown bullet list, wrap
-     at 88 chars, keep it concise.
-   - **Same-cycle fix**: if the change is a bugfix/improvement for something
-     already listed in `[Unreleased]` (same scope and topic), **do not add a
-     new entry** — instead update the existing entry's description to include
-     the fix. Only stand-alone bugfixes targeting an **already-released
-     version** (not in `[Unreleased]`) get their own `:bug:` entry.
+9. **Rewrite `## [Unreleased]` from scratch** by analyzing all changes
+   since the last release tag:
+   - Find last tag: `git describe --tags --abbrev=0`
+   - Review all commits since then: `git log --format="%h %s" <last_tag>..HEAD`
+   - Read diffs to understand what each commit functionally does
+   - **Replace the entire `[Unreleased]` section** with a coherent macro-level
+     summary of everything that will ship in the next release. Treat all
+     commits since the last tag as one conceptual change set. Cycle-internal
+     bugfixes (fixing something introduced in the same cycle) should be
+     **omitted entirely** from `[Unreleased]` — they are internal details not
+     relevant to users. Only bugfixes targeting **already-released code**
+     (not modified in this cycle) get their own `:bug:` entry.
+   - Format: markdown bullet list, wrap at 88 chars, concise.
+   - Newer/more significant entries at the top.
 10. **Stage `CHANGELOG.md` together with the code changes**, so the summary is
     committed as part of this commit.
 11. Proceed with committing.
@@ -74,11 +78,10 @@ Section inside `CHANGELOG.md`. Example:
   `[`hash`](url)` counts as 0 (neither URL nor hash text displayed)
 - **Concise** — say what was done and why in as few words as possible
 - **No commit hashes** — those are added by release skill
-- New entries are inserted at the top of the list (right after `## [Unreleased]`)
 
 ## Examples
 
-### Before commit
+### Initial commit
 
 Staged changes include a database module rewrite:
 
@@ -89,12 +92,14 @@ Staged changes include a database module rewrite:
   fails, automatically retry on local SQLite; on reconnect, sync data back
 ```
 
-### After several commits
+### Next commit
+
+Staged: fix X1/X2 button in rawinput.  Commit skill reviews all changes
+since last tag (`v1.0.0`), rewrites the entire `[Unreleased]`:
 
 ```markdown
 ## [Unreleased]
 
 - :sparkles: [database]: add MongoDB fallback to SQLite with auto-reconnect
 - :bug: [rawinput]: hardcode X1/X2 button number instead of usButtonData
-- :recycle: [imports]: group imports and remove fully-qualified std paths
 ```
