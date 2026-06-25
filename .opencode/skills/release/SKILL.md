@@ -61,8 +61,8 @@ summary from `[Unreleased]` section comes first, with commit hashes appended:
 - (module) description — [`ab12cd3`](url), [`ef4567`](url)
 ```
 
-**88-char display rule**: each line at most 88 **display characters**. The URL
-inside `[label](url)` does not count — only `[label]` is counted.
+**88-char display rule**: each line at most 88 **display characters**.
+`[`hash`](url)` counts as 0 (neither URL nor hash text displayed).
 
 **Hash placement**: the `— [`hash`](url)` sequence must never be split across
 lines. Instead:

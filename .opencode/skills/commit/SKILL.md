@@ -65,8 +65,8 @@ Section inside `CHANGELOG.md`. Example:
 
 - **Markdown** format, bullet list
 - Each bullet describes one capability/bugfix/refactor
-- **88-char wrap** — each line at most 88 display characters; text inside
-  `[label](url)` counts as `[label]` only (URL is not displayed)
+- **88-char wrap** — each line at most 88 display characters;
+  `[`hash`](url)` counts as 0 (neither URL nor hash text displayed)
 - **Concise** — say what was done and why in as few words as possible
 - **No commit hashes** — those are added by release skill
 - New entries are inserted at the top of the list (right after `## [Unreleased]`)
