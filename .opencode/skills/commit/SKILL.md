@@ -74,10 +74,23 @@ Section inside `CHANGELOG.md`. Example:
 
 - **Markdown** format, bullet list
 - Each bullet describes one capability/bugfix/refactor
-- **88-char wrap** — each line at most 88 display characters;
+- **88-char fill** — each line should try to fill 88 display characters;
   `[`hash`](url)` counts as 0 (neither URL nor hash text displayed)
 - **Concise** — say what was done and why in as few words as possible
 - **No commit hashes** — those are added by release skill
+
+### Hash placement (for release reference)
+
+When the release skill adds commit hashes:
+
+- **Hash placement**: the `— [`hash`](url)` sequence must never be split across
+  lines, and must never appear on a line by itself. The hash always shares a
+  line with descriptive text.
+- Single hash: inline on the first line if it fits within 88 display chars;
+  otherwise on the last continuation line alongside remaining description text.
+- Multiple hashes: grouped inside parentheses on the last continuation line,
+  preceded by description text:
+  `  description — ([`hash1`](url), [`hash2`](url), ...)`.
 
 ## Examples
 
