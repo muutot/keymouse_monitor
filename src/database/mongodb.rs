@@ -309,38 +309,27 @@ impl DatabaseBackend for MongoBackend {
         }
 
         self.rt.block_on(async {
-            if data.len() == 1 {
-                let (key, count) = data.iter().next().unwrap();
-                raw.update_one(
-                    doc! { "date": date_str, "key": key },
-                    doc! { "$inc": { "count": *count as i64 } },
-                )
-                .upsert(true)
-                .await
-                .map_err(|e| format!("merge inc stat: {e}"))?;
-            } else {
-                let models: Vec<WriteModel> = data
-                    .iter()
-                    .map(|(key, count)| {
-                        UpdateOneModel::builder()
-                            .namespace(ns.clone())
-                            .filter(doc! { "date": date_str, "key": key })
-                            .update(doc! { "$inc": { "count": *count as i64 } })
-                            .upsert(true)
-                            .build()
-                            .into()
-                    })
-                    .collect();
+            let models: Vec<WriteModel> = data
+                .iter()
+                .map(|(key, count)| {
+                    UpdateOneModel::builder()
+                        .namespace(ns.clone())
+                        .filter(doc! { "date": date_str, "key": key })
+                        .update(doc! { "$inc": { "count": *count as i64 } })
+                        .upsert(true)
+                        .build()
+                        .into()
+                })
+                .collect();
 
-                client
-                    .bulk_write(models)
-                    .await
-                    .map_err(|e| format!("merge inc stats: {e}"))?;
-            }
+            client
+                .bulk_write(models)
+                .await
+                .map_err(|e| format!("merge inc stats: {e}"))?;
             let t1 = Instant::now();
 
             tdebug!("mongodb",
-                "merge_incremental_stats({}): {:?} ({} keys)",
+                "merge_incremental_stats({}): bulk_write={:?} ({} keys)",
                 date_str,
                 t1 - t0,
                 key_count,
