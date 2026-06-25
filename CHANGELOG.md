@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- :bug: [build]: restore icon embedding — `build.rs` was moved to `scripts/`
+  but `Cargo.toml` was missing `build = "scripts/build.rs"`, so Cargo never
+  ran the script that generates and embeds the `.ico` into the `.exe`
 - :zap: [api]: push deltas over SSE instead of full snapshots — each event
   after the first carries only the keys whose count actually changed; the
   first message on every (re)connect is still a full snapshot, so the
