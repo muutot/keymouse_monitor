@@ -17,7 +17,7 @@ edition = "2021"
 build = "scripts/build.rs"
 
 [profile.release]
-opt-level = "z"
+opt-level = 3
 lto = true
 strip = true
 panic = "abort"

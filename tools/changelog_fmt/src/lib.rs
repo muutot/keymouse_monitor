@@ -44,8 +44,7 @@ fn table_sep_re() -> &'static Regex {
 /// Strips ` — (, , , , )` style artifacts left by removing hash links from
 /// a legacy ` — ([h1], [h2], [h3])` literal tail.
 fn hash_tail_parens_re() -> &'static Regex {
-    HASH_TAIL_PARENS_RE
-        .get_or_init(|| Regex::new(r"\s*—\s*\(\s*(?:,\s*)*\)\s*$").unwrap())
+    HASH_TAIL_PARENS_RE.get_or_init(|| Regex::new(r"\s*—\s*\(\s*(?:,\s*)*\)\s*$").unwrap())
 }
 
 fn trailing_dash_re() -> &'static Regex {
@@ -53,8 +52,7 @@ fn trailing_dash_re() -> &'static Regex {
 }
 
 fn hash_lone_strip_re() -> &'static Regex {
-    HASH_LONE_STRIP_RE
-        .get_or_init(|| Regex::new(r"[—–\-]\s*$").unwrap())
+    HASH_LONE_STRIP_RE.get_or_init(|| Regex::new(r"[—–\-]\s*$").unwrap())
 }
 
 fn word_char_re() -> &'static Regex {
@@ -121,9 +119,8 @@ pub fn check(text: &str) -> Vec<String> {
         }
 
         let no_hash = hash_link_re().replace_all(stripped, "");
-        let display_text = any_link_re().replace_all(&no_hash, |caps: &regex::Captures| {
-            caps[1].to_string()
-        });
+        let display_text =
+            any_link_re().replace_all(&no_hash, |caps: &regex::Captures| caps[1].to_string());
 
         // (a) hash link on a line with no descriptive text
         let hashes: Vec<_> = hash_link_re().find_iter(stripped).collect();
@@ -144,7 +141,7 @@ pub fn check(text: &str) -> Vec<String> {
         let is_c = is_continuation(stripped);
         let is_m = is_meta(stripped);
         if is_c && !is_m && in_entry {
-            let cont_words: Vec<&str> = display_text.trim().split_whitespace().collect();
+            let cont_words: Vec<&str> = display_text.split_whitespace().collect();
             if let Some(first_word) = cont_words.first() {
                 if word_char_re().is_match(first_word) {
                     let merged_len = prev_display.chars().count() + 1 + first_word.chars().count();
@@ -263,7 +260,11 @@ pub fn format_entry(bullet: &str, cont_texts: &[&str]) -> Vec<String> {
             cur_w = w.chars().count();
             continue;
         }
-        let margin = if lines.is_empty() { prefix_w } else { cont_indent };
+        let margin = if lines.is_empty() {
+            prefix_w
+        } else {
+            cont_indent
+        };
         let reserved = if is_last { t_w } else { 0 };
         // cur_w + 1 + len(w) + reserved <= WIDTH - margin
         let needed = cur_w + 1 + w.chars().count() + reserved;
@@ -317,7 +318,11 @@ pub fn format_text(text: &str) -> String {
             } else {
                 "\n"
             };
-            let after_term = if term.len() == 2 { &after[2..] } else { &after[1..] };
+            let after_term = if term.len() == 2 {
+                &after[2..]
+            } else {
+                &after[1..]
+            };
             splits.push((line, term));
             rest = after_term;
         } else {
@@ -327,10 +332,7 @@ pub fn format_text(text: &str) -> String {
     }
     let line_strs: Vec<String> = splits.iter().map(|(l, _)| l.to_string()).collect();
     let entries = collect_entries(&line_strs);
-    let mut new_lines: Vec<String> = splits
-        .iter()
-        .map(|(l, t)| format!("{}{}", l, t))
-        .collect();
+    let mut new_lines: Vec<String> = splits.iter().map(|(l, t)| format!("{}{}", l, t)).collect();
     // Replace in reverse so indices don't shift.
     let mut sorted: Vec<&(usize, usize, Vec<String>)> = entries.iter().collect();
     sorted.sort_by_key(|e| std::cmp::Reverse(e.0));
@@ -455,8 +457,16 @@ mod tests {
         for (i, line) in out.iter().enumerate() {
             if line.contains("[`abc1234`](http://x)") {
                 let text_only = any_link_re().replace_all(line, "").trim().to_string();
-                let text_only = hash_lone_strip_re().replace(text_only.as_str(), "").trim().to_string();
-                assert!(!text_only.is_empty(), "hash-only line at L{}: {:?}", i + 1, line);
+                let text_only = hash_lone_strip_re()
+                    .replace(text_only.as_str(), "")
+                    .trim()
+                    .to_string();
+                assert!(
+                    !text_only.is_empty(),
+                    "hash-only line at L{}: {:?}",
+                    i + 1,
+                    line
+                );
             }
         }
     }
@@ -472,7 +482,10 @@ mod tests {
         for line in &out {
             if line.contains("[`abc1234`](http://x)") {
                 let text_only = any_link_re().replace_all(line, "").trim().to_string();
-                let text_only = hash_lone_strip_re().replace(text_only.as_str(), "").trim().to_string();
+                let text_only = hash_lone_strip_re()
+                    .replace(text_only.as_str(), "")
+                    .trim()
+                    .to_string();
                 assert!(!text_only.is_empty(), "hash-only line: {:?}", line);
             }
         }
@@ -492,7 +505,11 @@ mod tests {
         let out = format_entry(bullet, &[]);
         let joined = out.join(" ");
         assert!(!joined.contains("— (, , )"), "artifact remains: {}", joined);
-        assert!(!joined.contains("— ( , , )"), "artifact remains: {}", joined);
+        assert!(
+            !joined.contains("— ( , , )"),
+            "artifact remains: {}",
+            joined
+        );
         for h in ["`aaa1111`", "`bbb2222`", "`ccc3333`"] {
             assert!(joined.contains(h), "missing hash {} in: {}", h, joined);
         }
@@ -592,8 +609,8 @@ mod tests {
             .join("..")
             .join("..")
             .join("CHANGELOG.md");
-        let original = std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("read {:?} failed", path));
+        let original =
+            std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("read {:?} failed", path));
         let original_errs = check(&original);
         let formatted = format_text(&original);
         let formatted_errs = check(&formatted);

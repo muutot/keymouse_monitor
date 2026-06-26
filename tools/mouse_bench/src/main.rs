@@ -6,10 +6,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use windows_sys::Win32::Foundation::{FILETIME, GetLastError, HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Foundation::{GetLastError, FILETIME, HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::Threading::{GetCurrentThread, GetCurrentThreadId, GetThreadTimes};
-use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::*;
+use windows_sys::Win32::UI::Input::*;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const BENCH_SECS: u64 = 6;
@@ -25,13 +25,15 @@ fn filetime_to_u64(ft: &FILETIME) -> u64 {
 
 fn thread_cpu_time() -> Duration {
     unsafe {
-        let ft = || FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+        let ft = || FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
         let (mut c, mut e, mut k, mut u) = (ft(), ft(), ft(), ft());
         if GetThreadTimes(GetCurrentThread(), &mut c, &mut e, &mut k, &mut u) != 0 {
             Duration::from_nanos((filetime_to_u64(&k) + filetime_to_u64(&u)) * 100)
         } else {
             Duration::ZERO
-
         }
     }
 }
@@ -54,9 +56,7 @@ unsafe fn send_mouse_event() {
     }
 }
 
-fn msg_loop(
-    process_msg: unsafe fn(&MSG),
-) -> Duration {
+fn msg_loop(process_msg: unsafe fn(&MSG)) -> Duration {
     unsafe {
         // Drain stale WM_QUIT from previous benc h runs
         let mut msg = mem::zeroed();
@@ -64,12 +64,15 @@ fn msg_loop(
 
         let wall_start = Instant::now();
         let cpu_start = thread_cpu_time();
-        let stim_interval = Duration::from_nanos(1_000_000_000 / STIM_HZ.load(Ordering::Relaxed).max(1) as u64);
+        let stim_interval =
+            Duration::from_nanos(1_000_000_000 / STIM_HZ.load(Ordering::Relaxed).max(1) as u64);
         let mut last_stim = Instant::now();
         loop {
             while PeekMessageA(&mut msg, null_mut(), 0, 0, PM_REMOVE) != 0 {
                 if msg.message == WM_QUIT {
-                    return thread_cpu_time().checked_sub(cpu_start).unwrap_or(Duration::ZERO);
+                    return thread_cpu_time()
+                        .checked_sub(cpu_start)
+                        .unwrap_or(Duration::ZERO);
                 }
                 process_msg(&msg);
             }
@@ -84,16 +87,15 @@ fn msg_loop(
             // The hook / raw input callbacks are triggered inside PeekMessageA
             windows_sys::Win32::System::Threading::Sleep(POLL_MS);
         }
-        thread_cpu_time().checked_sub(cpu_start).unwrap_or(Duration::ZERO)
+        thread_cpu_time()
+            .checked_sub(cpu_start)
+            .unwrap_or(Duration::ZERO)
     }
 }
 
 // ── Parallel message loop (no internal stimulator, uses stop flag) ────────
 
-fn msg_loop_par(
-    stop: &AtomicBool,
-    process_msg: unsafe fn(&MSG),
-) -> Duration {
+fn msg_loop_par(stop: &AtomicBool, process_msg: unsafe fn(&MSG)) -> Duration {
     unsafe {
         let mut msg = mem::zeroed();
         while PeekMessageA(&mut msg, null_mut(), WM_QUIT, WM_QUIT, PM_REMOVE) != 0 {}
@@ -101,7 +103,9 @@ fn msg_loop_par(
         loop {
             while PeekMessageA(&mut msg, null_mut(), 0, 0, PM_REMOVE) != 0 {
                 if msg.message == WM_QUIT {
-                    return thread_cpu_time().checked_sub(cpu_start).unwrap_or(Duration::ZERO);
+                    return thread_cpu_time()
+                        .checked_sub(cpu_start)
+                        .unwrap_or(Duration::ZERO);
                 }
                 process_msg(&msg);
             }
@@ -110,7 +114,9 @@ fn msg_loop_par(
             }
             windows_sys::Win32::System::Threading::Sleep(POLL_MS);
         }
-        thread_cpu_time().checked_sub(cpu_start).unwrap_or(Duration::ZERO)
+        thread_cpu_time()
+            .checked_sub(cpu_start)
+            .unwrap_or(Duration::ZERO)
     }
 }
 
@@ -140,11 +146,14 @@ fn bench_wh_mouse_ll() -> Duration {
     }
 }
 
-
-
 // ── Approach 2: Raw Input via DispatchMessage → wnd_proc ──────────────────
 
-unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn wnd_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     if msg == WM_INPUT {
         if let Some(raw) = keymouse_rawinput::read_raw_input(lparam) {
             if raw.header.dwType == RIM_TYPEMOUSE {
@@ -158,12 +167,22 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam:
 
 fn bench_rawinput_wndproc() -> Duration {
     unsafe {
-        let hwnd = match keymouse_rawinput::create_message_window(b"BenchWndProc\0", Some(wnd_proc)) {
+        let hwnd = match keymouse_rawinput::create_message_window(b"BenchWndProc\0", Some(wnd_proc))
+        {
             Ok(h) => h,
-            Err(e) => { eprintln!("  FAILED: {}", e); return Duration::ZERO; }
+            Err(e) => {
+                eprintln!("  FAILED: {}", e);
+                return Duration::ZERO;
+            }
         };
-        if !keymouse_rawinput::register_raw_input_device(hwnd, 0x01, 0x02, RIDEV_INPUTSINK | RIDEV_NOLEGACY) {
-            eprintln!("  FAILED register raw input"); return Duration::ZERO;
+        if !keymouse_rawinput::register_raw_input_device(
+            hwnd,
+            0x01,
+            0x02,
+            RIDEV_INPUTSINK | RIDEV_NOLEGACY,
+        ) {
+            eprintln!("  FAILED register raw input");
+            return Duration::ZERO;
         }
 
         STIM_HWND = hwnd as isize;
@@ -189,12 +208,24 @@ unsafe fn process_raw_input(lparam: LPARAM) {
 
 fn bench_rawinput_direct() -> Duration {
     unsafe {
-        let hwnd = match keymouse_rawinput::create_message_window(b"BenchDirect\0", Some(DefWindowProcA)) {
+        let hwnd = match keymouse_rawinput::create_message_window(
+            b"BenchDirect\0",
+            Some(DefWindowProcA),
+        ) {
             Ok(h) => h,
-            Err(e) => { eprintln!("  FAILED: {}", e); return Duration::ZERO; }
+            Err(e) => {
+                eprintln!("  FAILED: {}", e);
+                return Duration::ZERO;
+            }
         };
-        if !keymouse_rawinput::register_raw_input_device(hwnd, 0x01, 0x02, RIDEV_INPUTSINK | RIDEV_NOLEGACY) {
-            eprintln!("  FAILED register raw input"); return Duration::ZERO;
+        if !keymouse_rawinput::register_raw_input_device(
+            hwnd,
+            0x01,
+            0x02,
+            RIDEV_INPUTSINK | RIDEV_NOLEGACY,
+        ) {
+            eprintln!("  FAILED register raw input");
+            return Duration::ZERO;
         }
 
         STIM_HWND = hwnd as isize;
@@ -230,9 +261,16 @@ fn run_bench(name: &str, f: fn() -> Duration, auto: bool, hz: u32) -> BenchResul
         println!("  FAILED");
     } else {
         let wall = BENCH_SECS as f64;
-        println!("  {:>8.3} ms total  ({:>5.1} µs/s)", cpu.as_secs_f64() * 1000.0, cpu.as_secs_f64() * 1_000_000.0 / wall);
+        println!(
+            "  {:>8.3} ms total  ({:>5.1} µs/s)",
+            cpu.as_secs_f64() * 1000.0,
+            cpu.as_secs_f64() * 1_000_000.0 / wall
+        );
     }
-    BenchResult { name: name.to_string(), cpu }
+    BenchResult {
+        name: name.to_string(),
+        cpu,
+    }
 }
 
 struct BenchResult {
@@ -242,7 +280,7 @@ struct BenchResult {
 
 fn print_usage() {
     eprintln!(
-"mouse_bench — mouse listener CPU benchmark
+        "mouse_bench — mouse listener CPU benchmark
 
 USAGE:
     mouse_bench.exe [OPTIONS]
@@ -254,7 +292,8 @@ OPTIONS:
     --hz <HZ>             Stimulus rate in Hz (default 100)
     --only <1|2|3>        Run only one approach by number (sequential mode only)
     -h, --help            Print this help message and exit
-");
+"
+    );
 }
 
 fn parse_args() -> (bool, u32, bool, Option<usize>, bool) {
@@ -270,7 +309,10 @@ fn parse_args() -> (bool, u32, bool, Option<usize>, bool) {
             "--auto" | "-a" => auto = true,
             "--json" | "-j" => json = true,
             "--sequential" | "-s" => sequential = true,
-            "--help" | "-h" => { print_usage(); std::process::exit(0); }
+            "--help" | "-h" => {
+                print_usage();
+                std::process::exit(0);
+            }
             "--hz" => {
                 if i + 1 < args.len() {
                     i += 1;
@@ -302,8 +344,12 @@ unsafe fn send_mouse_event_parallel() {
     let mut input: INPUT = mem::zeroed();
     input.r#type = INPUT_MOUSE;
     input.Anonymous.mi = MOUSEINPUT {
-        dx: 1, dy: 0, mouseData: 0,
-        dwFlags: MOUSEEVENTF_MOVE, time: 0, dwExtraInfo: 0,
+        dx: 1,
+        dy: 0,
+        mouseData: 0,
+        dwFlags: MOUSEEVENTF_MOVE,
+        time: 0,
+        dwExtraInfo: 0,
     };
     SendInput(1, &input, mem::size_of::<INPUT>() as i32);
 }
@@ -311,7 +357,11 @@ unsafe fn send_mouse_event_parallel() {
 unsafe fn parallel_wh_mouse_ll(stop: &AtomicBool) -> Duration {
     BENCH_HOOK = SetWindowsHookExA(WH_MOUSE_LL, Some(hook_cb), null_mut(), 0);
     if BENCH_HOOK.is_null() {
-        let _ = writeln!(std::io::stdout(), "  WH_MOUSE_LL: SetWindowsHookExA err=0x{:x}", GetLastError());
+        let _ = writeln!(
+            std::io::stdout(),
+            "  WH_MOUSE_LL: SetWindowsHookExA err=0x{:x}",
+            GetLastError()
+        );
         return Duration::ZERO;
     }
     let cpu = msg_loop_par(stop, process_noop);
@@ -328,7 +378,11 @@ unsafe fn parallel_rawinput_wndproc(stop: &AtomicBool) -> Duration {
         }
     };
     if !keymouse_rawinput::register_raw_input_device(hwnd, 0x01, 0x02, RIDEV_INPUTSINK) {
-        let _ = writeln!(std::io::stdout(), "  ParWndProc: RegisterRawInputDevices err=0x{:x}", GetLastError());
+        let _ = writeln!(
+            std::io::stdout(),
+            "  ParWndProc: RegisterRawInputDevices err=0x{:x}",
+            GetLastError()
+        );
         return Duration::ZERO;
     }
     let cpu = msg_loop_par(stop, |msg| {
@@ -340,7 +394,8 @@ unsafe fn parallel_rawinput_wndproc(stop: &AtomicBool) -> Duration {
 }
 
 unsafe fn parallel_rawinput_direct(stop: &AtomicBool) -> Duration {
-    let hwnd = match keymouse_rawinput::create_message_window(b"ParDirect\0", Some(DefWindowProcA)) {
+    let hwnd = match keymouse_rawinput::create_message_window(b"ParDirect\0", Some(DefWindowProcA))
+    {
         Ok(h) => h,
         Err(e) => {
             let _ = writeln!(std::io::stdout(), "  ParDirect: {}", e);
@@ -348,7 +403,11 @@ unsafe fn parallel_rawinput_direct(stop: &AtomicBool) -> Duration {
         }
     };
     if !keymouse_rawinput::register_raw_input_device(hwnd, 0x01, 0x02, RIDEV_INPUTSINK) {
-        let _ = writeln!(std::io::stdout(), "  ParDirect: RegisterRawInputDevices err=0x{:x}", GetLastError());
+        let _ = writeln!(
+            std::io::stdout(),
+            "  ParDirect: RegisterRawInputDevices err=0x{:x}",
+            GetLastError()
+        );
         return Duration::ZERO;
     }
     let cpu = msg_loop_par(stop, |msg| {
@@ -383,10 +442,13 @@ fn run_parallel(hz: u32, json: bool, auto: bool) {
         parallel_wh_mouse_ll as unsafe fn(&AtomicBool) -> Duration,
         parallel_rawinput_wndproc,
         parallel_rawinput_direct,
-    ].into_iter().map(|f| {
+    ]
+    .into_iter()
+    .map(|f| {
         let stop = Arc::clone(&stop);
         thread::spawn(move || unsafe { f(&stop) })
-    }).collect();
+    })
+    .collect();
 
     // Give threads time to set up
     thread::sleep(Duration::from_millis(200));
@@ -396,7 +458,9 @@ fn run_parallel(hz: u32, json: bool, auto: bool) {
         let wall_start = Instant::now();
         let mut stim_count = 0u64;
         loop {
-            unsafe { send_mouse_event_parallel(); }
+            unsafe {
+                send_mouse_event_parallel();
+            }
             stim_count += 1;
             let expected = Duration::from_nanos(stim_count * stim_interval_ns);
             let actual = wall_start.elapsed();
@@ -417,12 +481,20 @@ fn run_parallel(hz: u32, json: bool, auto: bool) {
     for (i, handle) in handles.into_iter().enumerate() {
         let name = names[i];
         let cpu = handle.join().unwrap_or(Duration::ZERO);
-        results.push(BenchResult { name: name.to_string(), cpu });
+        results.push(BenchResult {
+            name: name.to_string(),
+            cpu,
+        });
         if cpu == Duration::ZERO {
             println!("  {:<40}  FAILED", name);
         } else {
             let wall = BENCH_SECS as f64;
-            println!("  {:<40}  {:>8.3} ms total  ({:>5.1} µs/s)", name, cpu.as_secs_f64() * 1000.0, cpu.as_secs_f64() * 1_000_000.0 / wall);
+            println!(
+                "  {:<40}  {:>8.3} ms total  ({:>5.1} µs/s)",
+                name,
+                cpu.as_secs_f64() * 1000.0,
+                cpu.as_secs_f64() * 1_000_000.0 / wall
+            );
         }
     }
 
@@ -434,7 +506,10 @@ fn run_parallel(hz: u32, json: bool, auto: bool) {
             let wall = BENCH_SECS as f64;
             let cpu_ms = r.cpu.as_secs_f64() * 1000.0;
             let cpu_us_per_s = r.cpu.as_secs_f64() * 1_000_000.0 / wall;
-            println!("    {{\"name\": \"{}\", \"cpu_ms\": {:.3}, \"cpu_us_per_s\": {:.1}}}{}", r.name, cpu_ms, cpu_us_per_s, comma);
+            println!(
+                "    {{\"name\": \"{}\", \"cpu_ms\": {:.3}, \"cpu_us_per_s\": {:.1}}}{}",
+                r.name, cpu_ms, cpu_us_per_s, comma
+            );
         }
         println!("  ]");
         println!("}}");
@@ -450,25 +525,47 @@ fn main() {
     }
 
     if auto {
-        println!("Mouse listener CPU benchmark (sequential, auto @ {} Hz)", hz);
+        println!(
+            "Mouse listener CPU benchmark (sequential, auto @ {} Hz)",
+            hz
+        );
     } else {
         println!("Mouse listener CPU benchmark (sequential, manual)");
     }
     println!("Test duration: {} s per approach\n", BENCH_SECS);
 
-    let approaches: [(&str, fn() -> Duration); 3] = [
-        ("WH_MOUSE_LL (early return on WM_MOUSEMOVE)", bench_wh_mouse_ll),
-        ("Raw Input via DispatchMessage → wnd_proc", bench_rawinput_wndproc),
-        ("Raw Input direct in msg loop + stack buffer", bench_rawinput_direct),
+    type BenchFn = fn() -> Duration;
+    let approaches: [(&str, BenchFn); 3] = [
+        (
+            "WH_MOUSE_LL (early return on WM_MOUSEMOVE)",
+            bench_wh_mouse_ll,
+        ),
+        (
+            "Raw Input via DispatchMessage → wnd_proc",
+            bench_rawinput_wndproc,
+        ),
+        (
+            "Raw Input direct in msg loop + stack buffer",
+            bench_rawinput_direct,
+        ),
     ];
 
     let mut results = Vec::new();
 
     for (i, (name, f)) in approaches.iter().enumerate() {
         if let Some(only_n) = only {
-            if i + 1 != only_n { continue; }
+            if i + 1 != only_n {
+                continue;
+            }
         }
-        println!("[{}/{}] {}  ({} @ {} Hz)", i + 1, approaches.len(), name, if auto { "auto" } else { "manual" }, hz);
+        println!(
+            "[{}/{}] {}  ({} @ {} Hz)",
+            i + 1,
+            approaches.len(),
+            name,
+            if auto { "auto" } else { "manual" },
+            hz
+        );
         let r = run_bench(name, *f, auto, hz);
         results.push(r);
         println!();
@@ -482,7 +579,10 @@ fn main() {
             let wall = BENCH_SECS as f64;
             let cpu_ms = r.cpu.as_secs_f64() * 1000.0;
             let cpu_us_per_s = r.cpu.as_secs_f64() * 1_000_000.0 / wall;
-            println!("    {{\"name\": \"{}\", \"cpu_ms\": {:.3}, \"cpu_us_per_s\": {:.1}}}{}", r.name, cpu_ms, cpu_us_per_s, comma);
+            println!(
+                "    {{\"name\": \"{}\", \"cpu_ms\": {:.3}, \"cpu_us_per_s\": {:.1}}}{}",
+                r.name, cpu_ms, cpu_us_per_s, comma
+            );
         }
         println!("  ]");
         println!("}}");

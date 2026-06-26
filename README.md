@@ -206,7 +206,7 @@ CI (GitHub Actions) builds on push to `main` that modifies the `version` file; a
 │   │   ├── mod.rs            # Database enum, DatabaseBackend trait, ImportMode
 │   │   ├── sqlite.rs         # SQLite backend (rusqlite, flat schema)
 │   │   └── mongodb.rs       # MongoDB backend (dedicated tokio runtime)
-│   ├── maps.rs               # Key/Button → display string mapping
+│   ├── maps.rs               # Key/Button → display string mapping (common/src/maps.rs)
 │   └── listener/
 │       ├── mod.rs            # Dispatch by kind (native/rawinput/rdev)
 │       ├── common.rs         # CallbackData, process_event

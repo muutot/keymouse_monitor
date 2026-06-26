@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- :zap: [build]: switch release profile from `opt-level = "z"` to
+  `opt-level = 3` for faster runtime execution
+- :art: [lint]: fix clippy warnings — add `BenchFn` type alias in mouse_bench
+  for `type_complexity`, remove redundant `.trim()` in changelog_fmt
+- :memo: [readme]: fix stale `src/maps.rs` → `common/src/maps.rs` path
 - :zap: [core]: add 50ms debounce to SSE handler to coalesce rapid key
   events into a single push, reducing frontend rendering load during bursts
 - :recycle: [core]: migrate from `std::sync::Mutex` to `parking_lot::Mutex`
