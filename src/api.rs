@@ -321,20 +321,28 @@ async fn import_handler(
     let today = Local::now().format("%Y-%m-%d").to_string();
     let start = Instant::now();
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let today_counts: HashMap<String, u64> = serde_json::from_str(&json_str)
+        let (has_today, today_counts): (bool, HashMap<String, u64>) = serde_json::from_str(&json_str)
             .ok()
             .and_then(|v: Value| {
                 v.get("records")
                     .and_then(|r| r.as_object())
-                    .and_then(|records| records.get(&today).cloned())
-                    .and_then(|v| serde_json::from_value(v).ok())
+                    .map(|records| {
+                        let counts = records
+                            .get(&today)
+                            .cloned()
+                            .and_then(|v| serde_json::from_value(v).ok())
+                            .unwrap_or_default();
+                        (records.contains_key(&today), counts)
+                    })
             })
             .unwrap_or_default();
 
-        let mut guard = data.write();
-        let mut db_guard = db.lock().unwrap();
-        db_guard.import_from_json(&json_str, mode)?;
-        if !today_counts.is_empty() {
+        {
+            let mut db_guard = db.lock().unwrap();
+            db_guard.import_from_json(&json_str, mode)?;
+        }
+        if has_today || !today_counts.is_empty() {
+            let mut guard = data.write();
             guard.import_today_data(&today_counts, mode);
         }
         Ok(())

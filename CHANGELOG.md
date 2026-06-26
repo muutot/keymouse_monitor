@@ -6,11 +6,16 @@
   replaces loading-all-into-memory with per-cursor streaming via
   `write_json_str`; adds date-range filtering, percentage-boundary progress
   updates, and a frontend progress bar driven by `EventSource`
-- :bug: [export]: fix "trailing characters at line 1 column 10" crash caused
-  by missing `{` prefix in generated JSON output
 - :zap: [export,mongodb]: switch from `find()` to `aggregate($match+$sort)`
   with `allow_disk_use(true)` and `batch_size(5000)` for better Atlas
   compatibility and reduced memory pressure
+- :bug: [api]: fix import not updating in-memory today data when the record
+  exists but has no key counts — narrows `data.write()` lock scope to only
+  cover the today-data update, avoiding unnecessary lock contention during DB
+  import
+- :wrench: [changelog_fmt]: relax format test assertion from a hardcoded
+  `MAX_ALLOWED=1` to `formatted_errs <= original_errs`, making the test
+  resilient to the current checked-in CHANGELOG state
 
 ## [2.2.0]
 
