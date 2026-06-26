@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- :zap: [export]: stop progress-poller task early when no SSE client is
+  connected, avoiding wasted CPU cycles during background export
 - :recycle: [database]: deduplicate `write_json_str` and export-progress
   helpers into `mod.rs` to eliminate 32 lines of identical code in
   SQLite and MongoDB backends

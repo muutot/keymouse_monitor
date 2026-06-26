@@ -195,7 +195,10 @@ async fn export_handler(
                 let _ = tx2.send(Some((u64::MAX, u64::MAX)));
                 break;
             }
-            let _ = tx2.send(Some((current, total)));
+            if tx2.send(Some((current, total))).is_err() {
+                tdebug!("export", "no SSE receivers, stopping progress poller");
+                break;
+            }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
     });
