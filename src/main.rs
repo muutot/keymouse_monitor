@@ -267,7 +267,7 @@ async fn main() {
         guard.save_to_db(&mut db_guard, &mode_shutdown);
     })
     .await
-    .ok();
+    .unwrap_or_else(|e| terror!("main", "Final save failed: {}", e));
 
     tinfo!("main", "Data saved. Goodbye!");
 

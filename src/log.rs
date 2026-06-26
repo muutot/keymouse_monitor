@@ -100,34 +100,34 @@ pub fn init_logger(config: &LogConfig) {
 #[macro_export]
 macro_rules! tinfo {
     ($module:expr, $($arg:tt)*) => {
-        ::tracing::info!("[{}] {}", $module, format_args!($($arg)*));
+        ::tracing::info!("[{}] {}", $module, format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! terror {
     ($module:expr, $($arg:tt)*) => {
-        ::tracing::error!("[{}] {}", $module, format_args!($($arg)*));
+        ::tracing::error!("[{}] {}", $module, format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! twarn {
     ($module:expr, $($arg:tt)*) => {
-        ::tracing::warn!("[{}] {}", $module, format_args!($($arg)*));
+        ::tracing::warn!("[{}] {}", $module, format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! tdebug {
     ($module:expr, $($arg:tt)*) => {
-        ::tracing::debug!("[{}] {}", $module, format_args!($($arg)*));
+        ::tracing::debug!("[{}] {}", $module, format_args!($($arg)*))
     };
 }
 
 #[macro_export]
 macro_rules! ttrace {
     ($module:expr, $($arg:tt)*) => {
-        ::tracing::trace!("[{}] {}", $module, format_args!($($arg)*));
+        ::tracing::trace!("[{}] {}", $module, format_args!($($arg)*))
     };
 }
