@@ -146,11 +146,13 @@ async fn export_handler(
             Json(json!({"error": "Invalid format, use 'nested' or 'flat'."})),
         ));
     }
-    if params.start.as_deref().unwrap_or("") > params.end.as_deref().unwrap_or("") {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(json!({"error": "start must not be after end"})),
-        ));
+    if let (Some(start), Some(end)) = (params.start.as_deref(), params.end.as_deref()) {
+        if start > end {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(json!({"error": "start must not be after end"})),
+            ));
+        }
     }
     let pretty = params.pretty.unwrap_or(false);
     let db = state.db.clone();

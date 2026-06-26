@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- :bug: [api]: fix date-range validation false positive when only `start`
+  is provided — old code compared `"有效日期"` against `""`, always
+  returning a 400 error
+- :bug: [timer]: fix deadlock in automatic reconnect block — scope
+  `parking_lot::Mutex` guard so it drops before the second `db.lock()`,
+  preventing deadlock on the non-reentrant mutex
 - :zap: [export]: stop progress-poller task early when no SSE client is
   connected, avoiding wasted CPU cycles during background export
 - :recycle: [database]: deduplicate `write_json_str` and export-progress

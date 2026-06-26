@@ -167,8 +167,10 @@ async fn main() {
             let mode = update_mode_timer.clone();
             let _ = tokio::task::spawn_blocking(move || {
                 // Try reconnecting fallback primary (e.g. MongoDB) each tick
-                let mut db_guard = db.lock();
-                let _ = db_guard.try_reconnect();
+                {
+                    let mut db_guard = db.lock();
+                    let _ = db_guard.try_reconnect();
+                }
                 enum Action {
                     Diff {
                         date: String,
