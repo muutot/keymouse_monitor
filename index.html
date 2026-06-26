@@ -1494,6 +1494,7 @@
     const fmt = document.querySelector('input[name="export-format"]:checked').value;
     const start = exportStart.value;
     const end = exportEnd.value;
+    const sessionId = Date.now() + '-' + Math.random().toString(36).slice(2);
     exportConfirm.disabled = true;
     exportOverlay.classList.remove('active');
 
@@ -1502,8 +1503,8 @@
     exportLoadingFill.style.width = '0%';
     exportLoadingOverlay.classList.add('show');
 
-    // Reactive progress via SSE
-    const es = new EventSource(`${API_URL}/api/export/progress/stream`);
+    // Reactive progress via SSE (per-session to avoid cross-tab interference)
+    const es = new EventSource(`${API_URL}/api/export/progress/stream?session=${sessionId}`);
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
@@ -1522,7 +1523,7 @@
     es.onerror = () => { es.close(); };
 
     try {
-      let url = `${API_URL}/api/export?format=${fmt}&pretty=true&_=${Date.now()}`;
+      let url = `${API_URL}/api/export?format=${fmt}&pretty=true&session=${sessionId}&_=${Date.now()}`;
       if (start) url += `&start=${start}`;
       if (end) url += `&end=${end}`;
       const response = await fetch(url);

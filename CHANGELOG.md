@@ -2,37 +2,40 @@
 
 ## [Unreleased]
 
-- :bug: [api]: fix date-range validation false positive when only `start`
-  is provided — old code compared `"有效日期"` against `""`, always
-  returning a 400 error
-- :bug: [timer]: fix deadlock in automatic reconnect block — scope
+- :sparkles: [export]: per-session progress channels — replaces the single
+  global watch channel with a `HashMap<session_id, watch::Sender>`, so multiple
+  browser tabs or windows can run independent exports without cross-tab
+  interference; frontend generates a unique session id per export and passes
+  it to both `/api/export` and the SSE stream; `SessionGuard` cleans up on
+  client disconnect
+- :bug: [api]: fix date-range validation false positive when only `start` is
+  provided — old code compared the literal `"有效日期"` against `""`, always
+  returning a 400 error even for valid single-bound requests
+- :bug: [timer]: fix deadlock in automatic reconnect block — scope the
   `parking_lot::Mutex` guard so it drops before the second `db.lock()`,
   preventing deadlock on the non-reentrant mutex
-- :zap: [export]: stop progress-poller task early when no SSE client is
-  connected, avoiding wasted CPU cycles during background export
 - :recycle: [database]: deduplicate `write_json_str` and export-progress
-  helpers into `mod.rs` to eliminate 32 lines of identical code in
+  helpers into `mod.rs`, eliminating 32 lines of identical code in the
   SQLite and MongoDB backends
-- :bug: [sqlite]: fix export crash when only one date boundary is provided —
-  handle all four `(start,end)` combinations in SQL generation instead of
-  assuming both-or-none, preventing bind-parameter mismatch at runtime
+- :bug: [main]: log final-save error via `terror!()` instead of silently
+  discarding the `JoinError` from `spawn_blocking`
 - :zap: [build]: switch release profile from `opt-level = "z"` to
   `opt-level = 3` for faster runtime execution
 - :art: [lint]: fix clippy warnings — add `BenchFn` type alias in mouse_bench
   for `type_complexity`, remove redundant `.trim()` in changelog_fmt
 - :memo: [readme]: fix stale `src/maps.rs` → `common/src/maps.rs` path
-- :zap: [core]: add 50ms debounce to SSE handler to coalesce rapid key
-  events into a single push, reducing frontend rendering load during bursts
+- :zap: [core]: add 50ms debounce to SSE handler to coalesce rapid key events
+  into a single push, reducing frontend rendering load during bursts
 - :recycle: [core]: migrate from `std::sync::Mutex` to `parking_lot::Mutex`
   to eliminate lock poisoning and remove all `.unwrap()` calls on lock
 - :wrench: [config]: log IO error via `twarn!()` when `config.json` read
   fails, instead of silently falling back to defaults
-- :recycle: [rawinput]: replace `static mut` with `OnceLock` to shrink unsafe
-  code scope; add missing `# Safety` doc on `read_raw_input`
+- :recycle: [rawinput]: replace `static mut CB` with `OnceLock` to shrink
+  unsafe code scope; add missing `# Safety` doc on `read_raw_input`
 - :bug: [sqlite,database]: validate table name on startup to prevent SQL
   injection via config; reject negative counts and malformed dates during
-  `import_from_json` in both SQLite and MongoDB backends; use
-  `checked_mul`/`checked_div` in export progress to avoid arithmetic overflow
+  `import_from_json` in both backends; use `checked_mul`/`checked_div` in
+  export progress to avoid arithmetic overflow
 - :sparkles: [export]: streaming JSON export with reactive SSE progress —
   replaces loading-all-into-memory with per-cursor streaming via
   `write_json_str`; adds date-range filtering, percentage-boundary progress
@@ -42,8 +45,7 @@
   compatibility and reduced memory pressure
 - :bug: [api]: fix import not updating in-memory today data when the record
   exists but has no key counts — narrows `data.write()` lock scope to only
-  cover the today-data update, avoiding unnecessary lock contention during DB
-  import
+  cover the today-data update, avoiding unnecessary lock contention
 - :wrench: [changelog_fmt]: relax format test assertion from a hardcoded
   `MAX_ALLOWED=1` to `formatted_errs <= original_errs`, making the test
   resilient to the current checked-in CHANGELOG state

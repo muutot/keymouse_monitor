@@ -31,13 +31,17 @@ use crate::{
     tdebug, tinfo,
 };
 
+/// Per-session export progress channels. Key = session id,
+/// value = sender that the export handler pushes to.
+type ExportSessions = Arc<RwLock<HashMap<String, watch::Sender<Option<(u64, u64, bool)>>>>>;
+
 #[derive(Clone)]
 pub struct AppState {
     pub data: Arc<RwLock<MonitorData>>,
     pub db: Arc<Mutex<Database>>,
     pub change_tx: watch::Sender<()>,
     pub client_count: Arc<AtomicUsize>,
-    pub export_progress: watch::Sender<Option<(u64, u64)>>,
+    pub export_sessions: ExportSessions,
 }
 
 struct SseConnectionGuard {
@@ -54,6 +58,32 @@ impl SseConnectionGuard {
 impl Drop for SseConnectionGuard {
     fn drop(&mut self) {
         self.count.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// Ensures the per-session entry is cleaned up when the SSE stream
+/// is dropped (client disconnect) or completes normally.
+struct SessionGuard {
+    sessions: ExportSessions,
+    sid: String,
+    cleaned: bool,
+}
+
+impl SessionGuard {
+    fn new(sessions: ExportSessions, sid: String) -> Self {
+        Self {
+            sessions,
+            sid,
+            cleaned: false,
+        }
+    }
+}
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        if !self.cleaned {
+            self.sessions.write().remove(&self.sid);
+        }
     }
 }
 
@@ -133,6 +163,7 @@ pub struct ExportParams {
     pub pretty: Option<bool>,
     pub start: Option<String>,
     pub end: Option<String>,
+    pub session: Option<String>,
 }
 
 async fn export_handler(
@@ -159,73 +190,102 @@ async fn export_handler(
     let fmt_owned = fmt.to_string();
     let start = params.start.clone();
     let end = params.end.clone();
+    let session_id = params.session.clone().unwrap_or_default();
 
-    // Reset shared progress so a new export starts clean (no stale state)
-    let _ = state.export_progress.send(None);
+    // Create a per-session progress channel so SSE clients can subscribe
+    let tx = if !session_id.is_empty() {
+        Some(
+            state
+                .export_sessions
+                .write()
+                .entry(session_id.clone())
+                .or_insert_with(|| watch::channel(None).0)
+                .clone(),
+        )
+    } else {
+        None
+    };
 
     tdebug!(
         "export",
-        "Starting export: format={}, start={:?}, end={:?}, pretty={}",
+        "Starting export: format={}, start={:?}, end={:?}, pretty={}, session={}",
         fmt,
         start,
         end,
-        pretty
+        pretty,
+        session_id,
     );
 
     let progress = Arc::new(ExportProgress::new());
-    let tx = state.export_progress.clone();
-    let tx2 = tx.clone();
-    let poll_progress = progress.clone();
-    tokio::spawn(async move {
-        let mut last_logged = (u64::MAX, u64::MAX, false);
-        loop {
-            let done = poll_progress.done.load(Ordering::Relaxed);
-            let total = poll_progress.total.load(Ordering::Relaxed);
-            let current = poll_progress.current.load(Ordering::Relaxed);
-            if (current, total, done) != last_logged {
-                tdebug!(
-                    "export",
-                    "progress tick: current={}, total={}, done={}",
-                    current,
-                    total,
-                    done
-                );
-                last_logged = (current, total, done);
+
+    // Spawn progress poller only when a session channel exists for reporting
+    if let Some(tx) = tx.clone() {
+        let poll_progress = progress.clone();
+        tokio::spawn(async move {
+            let mut last_logged = (u64::MAX, u64::MAX, false);
+            loop {
+                let done = poll_progress.done.load(Ordering::Relaxed);
+                let total = poll_progress.total.load(Ordering::Relaxed);
+                let current = poll_progress.current.load(Ordering::Relaxed);
+                if (current, total, done) != last_logged {
+                    tdebug!(
+                        "export",
+                        "progress tick: current={}, total={}, done={}",
+                        current,
+                        total,
+                        done
+                    );
+                    last_logged = (current, total, done);
+                }
+                if done || (total > 0 && current >= total) {
+                    tdebug!("export", "progress done, sending completion sentinel");
+                    let _ = tx.send(Some((total, total, true)));
+                    break;
+                }
+                if tx.send(Some((current, total, false))).is_err() {
+                    tdebug!("export", "no SSE receivers, stopping progress poller");
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
             }
-            if done || (total > 0 && current >= total) {
-                tdebug!("export", "progress done, sending completion sentinel");
-                let _ = tx2.send(Some((u64::MAX, u64::MAX)));
-                break;
-            }
-            if tx2.send(Some((current, total))).is_err() {
-                tdebug!("export", "no SSE receivers, stopping progress poller");
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(200)).await;
-        }
-    });
+        });
+    }
 
     let export_prog = progress.clone();
-    let json_result = tokio::task::spawn_blocking(move || {
+
+    // Mark export as done and clean up the session map entry.
+    // The poller (above) is responsible for sending the completion sentinel.
+    let signal_done = |progress: &ExportProgress, sessions: &ExportSessions, sid: &str| {
+        progress.done.store(true, Ordering::Relaxed);
+        tdebug!("export", "done flag set");
+        if !sid.is_empty() {
+            sessions.write().remove(sid);
+            tdebug!("export", "session {} cleaned up", sid);
+        }
+    };
+
+    let json_result = match tokio::task::spawn_blocking(move || {
         let db = db.lock();
         db.export_to_json(&fmt_owned, start.as_deref(), end.as_deref(), &export_prog)
     })
     .await
-    .map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"error": "Database export task panicked."})),
-        )
-    })?;
+    {
+        Ok(result) => result,
+        Err(_) => {
+            signal_done(&progress, &state.export_sessions, &session_id);
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error": "Database export task panicked."})),
+            ));
+        }
+    };
 
     tdebug!(
         "export",
         "export_to_json returned {} bytes",
         json_result.len()
     );
-    progress.done.store(true, Ordering::Relaxed);
-    let _ = tx.send(Some((u64::MAX, u64::MAX)));
-    tdebug!("export", "done flag set, completion sentinel sent");
+    signal_done(&progress, &state.export_sessions, &session_id);
 
     if json_result.is_empty() {
         return Err((
@@ -252,47 +312,79 @@ async fn export_handler(
         .expect("static response builder"))
 }
 
-async fn export_progress_handler(State(state): State<AppState>) -> Json<Value> {
-    let val = *state.export_progress.subscribe().borrow();
+async fn export_progress_handler(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Json<Value> {
+    let val = (|| -> Option<(u64, u64, bool)> {
+        let sid = params.get("session")?;
+        let sessions = state.export_sessions.read();
+        let tx = sessions.get(sid)?;
+        *tx.subscribe().borrow()
+    })();
     progress_json(val)
 }
 
-fn progress_json(val: Option<(u64, u64)>) -> Json<Value> {
+fn progress_json(val: Option<(u64, u64, bool)>) -> Json<Value> {
+    Json(progress_value_inner(val))
+}
+
+fn progress_value_inner(val: Option<(u64, u64, bool)>) -> Value {
     match val {
-        Some((_, total)) if total == u64::MAX => {
-            // Sentinel completion signal — never leak u64::MAX to JS
-            Json(json!({ "current": 0, "total": 0, "done": true, "idle": false }))
+        Some((_current, _total, true)) => {
+            json!({ "current": 0, "total": 0, "done": true, "idle": false })
         }
-        Some((current, total)) => {
+        Some((current, total, false)) => {
             let done = total > 0 && current >= total;
-            Json(json!({
+            json!({
                 "current": current.min(total),
                 "total": total,
                 "done": done,
-            }))
+            })
         }
-        None => Json(json!({ "current": 0, "total": 0, "done": false, "idle": true })),
+        None => json!({ "current": 0, "total": 0, "done": false, "idle": true }),
     }
 }
 
 async fn export_progress_sse_handler(
     State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
 ) -> Sse<impl futures::stream::Stream<Item = Result<Event, Infallible>>> {
-    tdebug!("export", "SSE client connected");
-    // Reset so a new client never sees stale completion from a prior export
-    let _ = state.export_progress.send(None);
-    let rx = state.export_progress.subscribe();
+    let session_id = params.get("session").cloned().unwrap_or_default();
+    tdebug!("export", "SSE client connected, session={}", session_id);
 
-    let stream = futures::stream::unfold((rx, None::<(u64, u64)>), |(mut rx, last)| async move {
-        rx.changed().await.ok()?;
-        let val = *rx.borrow_and_update();
-        let json = progress_value(val);
-        let raw = val.unwrap_or((0, 0));
-        if Some(raw) != last {
-            tdebug!("export", "SSE pushing: {} (raw={:?})", json, raw);
-        }
-        Some((Ok(Event::default().data(json)), (rx, Some(raw))))
-    });
+    // If the export handler already created a channel (started before SSE
+    // connected), reuse it; otherwise create one now.
+    let rx = if !session_id.is_empty() {
+        let mut map = state.export_sessions.write();
+        let tx = map
+            .entry(session_id.clone())
+            .or_insert_with(|| watch::channel(None).0);
+        tx.subscribe()
+    } else {
+        let (_, rx) = watch::channel(None);
+        rx
+    };
+
+    let guard = SessionGuard::new(state.export_sessions.clone(), session_id.clone());
+
+    let stream = futures::stream::unfold(
+        (rx, guard, false),
+        |(mut rx, mut guard, mut done)| async move {
+            if done {
+                guard.cleaned = true;
+                let _ = guard.sessions.write().remove(&guard.sid);
+                return None;
+            }
+            rx.changed().await.ok()?;
+            let val = *rx.borrow_and_update();
+            let json = progress_value(val);
+            if let Some((_, _, true)) = val {
+                done = true;
+            }
+            Some((Ok(Event::default().data(json)), (rx, guard, done)))
+        },
+    );
 
     Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -301,24 +393,8 @@ async fn export_progress_sse_handler(
     )
 }
 
-fn progress_value(val: Option<(u64, u64)>) -> String {
-    match val {
-        Some((_, total)) if total == u64::MAX => {
-            serde_json::json!({"current": 0, "total": 0, "done": true, "idle": false}).to_string()
-        }
-        Some((current, total)) => {
-            let done = total > 0 && current >= total;
-            serde_json::json!({
-                "current": current.min(total),
-                "total": total,
-                "done": done,
-            })
-            .to_string()
-        }
-        None => {
-            serde_json::json!({"current": 0, "total": 0, "done": false, "idle": true}).to_string()
-        }
-    }
+fn progress_value(val: Option<(u64, u64, bool)>) -> String {
+    progress_value_inner(val).to_string()
 }
 
 #[derive(Deserialize)]
