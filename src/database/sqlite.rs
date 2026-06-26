@@ -6,7 +6,9 @@ use rusqlite::Connection;
 
 use crate::{config::SqliteConfig, tdebug, tinfo, twarn};
 
-use super::{BackendType, DatabaseBackend, ExportProgress, ImportMode};
+use super::{
+    update_export_progress, write_json_str, BackendType, DatabaseBackend, ExportProgress, ImportMode,
+};
 
 fn validate_identifier(name: &str, label: &str) -> Result<(), String> {
     if name.is_empty() {
@@ -449,16 +451,9 @@ impl DatabaseBackend for SqliteBackend {
                 let mut last_pct = -1i32;
                 while let Some(row) = rows.next().map_err(|e| format!("row: {e}"))? {
                     current += 1;
-                    let pct = if total > 0 {
-                        (current
-                            .checked_mul(100)
-                            .and_then(|v| v.checked_div(total))
-                            .unwrap_or(0)) as i32
-                    } else {
-                        0
-                    };
-                    if pct != last_pct {
-                        progress.current.store(current, Ordering::Relaxed);
+                    let prev = last_pct;
+                    let pct = update_export_progress(progress, current, total, &mut last_pct);
+                    if pct != prev {
                         tdebug!(
                             "sqlite",
                             "export progress: {}% ({}/{})",
@@ -466,7 +461,6 @@ impl DatabaseBackend for SqliteBackend {
                             current,
                             total
                         );
-                        last_pct = pct;
                     }
                     if first {
                         first = false;
@@ -495,16 +489,9 @@ impl DatabaseBackend for SqliteBackend {
                 let mut last_pct = -1i32;
                 while let Some(row) = rows.next().map_err(|e| format!("row: {e}"))? {
                     current += 1;
-                    let pct = if total > 0 {
-                        (current
-                            .checked_mul(100)
-                            .and_then(|v| v.checked_div(total))
-                            .unwrap_or(0)) as i32
-                    } else {
-                        0
-                    };
-                    if pct != last_pct {
-                        progress.current.store(current, Ordering::Relaxed);
+                    let prev = last_pct;
+                    let pct = update_export_progress(progress, current, total, &mut last_pct);
+                    if pct != prev {
                         tdebug!(
                             "sqlite",
                             "export progress: {}% ({}/{})",
@@ -512,7 +499,6 @@ impl DatabaseBackend for SqliteBackend {
                             current,
                             total
                         );
-                        last_pct = pct;
                     }
                     let date: String = row.get(0).map_err(|e| format!("get date: {e}"))?;
                     let key: String = row.get(1).map_err(|e| format!("get key: {e}"))?;
@@ -691,22 +677,4 @@ impl DatabaseBackend for SqliteBackend {
         );
         Ok(())
     }
-}
-
-fn write_json_str(out: &mut String, s: &str) {
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c.is_control() => {
-                let _ = std::fmt::Write::write_fmt(&mut *out, format_args!("\\u{:04x}", c as u32));
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
 }

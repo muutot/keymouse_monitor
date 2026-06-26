@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use crate::config::{
     DatabaseConfig, FallbackConfig, FallbackSyncMode, MongoConfig, SqliteConfig,
@@ -8,6 +8,45 @@ use crate::{tinfo, twarn};
 
 mod mongodb;
 mod sqlite;
+
+pub(crate) fn write_json_str(out: &mut String, s: &str) {
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => {
+                let _ = std::fmt::Write::write_fmt(&mut *out, format_args!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
+pub(crate) fn update_export_progress(
+    progress: &ExportProgress,
+    current: u64,
+    total: u64,
+    last_pct: &mut i32,
+) -> i32 {
+    let pct = if total > 0 {
+        (current
+            .checked_mul(100)
+            .and_then(|v| v.checked_div(total))
+            .unwrap_or(0)) as i32
+    } else {
+        0
+    };
+    if pct != *last_pct {
+        progress.current.store(current, Ordering::Relaxed);
+        *last_pct = pct;
+    }
+    pct
+}
 
 pub struct ExportProgress {
     pub total: AtomicU64,
@@ -258,21 +297,13 @@ impl Database {
         end: Option<&str>,
         progress: &ExportProgress,
     ) -> String {
-        match self.inner.export_to_json(format, start, end, progress) {
-            Ok(v) => v,
-            Err(e) => {
-                twarn!("database", "Export failed: {}", e);
-                String::new()
-            }
-        }
+        self.read_with_fallback("export_to_json", |b| {
+            b.export_to_json(format, start, end, progress)
+        })
     }
 
     pub fn import_from_json(&mut self, json_str: &str, mode: ImportMode) -> Result<(), String> {
         self.inner.import_from_json(json_str, mode)
     }
 
-    #[allow(dead_code)]
-    pub fn backend_type(&self) -> BackendType {
-        self.inner.backend_type()
-    }
 }

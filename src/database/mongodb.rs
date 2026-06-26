@@ -12,7 +12,9 @@ use tokio::runtime::Runtime;
 use crate::{config::MongoConfig, tdebug, tinfo, twarn};
 use keymouse_common::database::{build_uri, redact_credentials};
 
-use super::{BackendType, DatabaseBackend, ExportProgress, ImportMode};
+use super::{
+    update_export_progress, write_json_str, BackendType, DatabaseBackend, ExportProgress, ImportMode,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FlatStat {
@@ -172,23 +174,7 @@ impl MongoBackend {
     }
 }
 
-fn write_json_str(out: &mut String, s: &str) {
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c.is_control() => {
-                let _ = std::fmt::Write::write_fmt(&mut *out, format_args!("\\u{:04x}", c as u32));
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-}
+
 
 impl DatabaseBackend for MongoBackend {
     fn backend_type(&self) -> BackendType {
@@ -448,16 +434,9 @@ impl DatabaseBackend for MongoBackend {
                         .map_err(|e| format!("cursor: {e}"))?
                     {
                         current += 1;
-                        let pct = if total > 0 {
-                            (current
-                                .checked_mul(100)
-                                .and_then(|v| v.checked_div(total))
-                                .unwrap_or(0)) as i32
-                        } else {
-                            0
-                        };
-                        if pct != last_pct {
-                            progress.current.store(current, Ordering::Relaxed);
+                        let prev = last_pct;
+                        let pct = update_export_progress(progress, current, total, &mut last_pct);
+                        if pct != prev {
                             tdebug!(
                                 "mongodb",
                                 "export progress: {}% ({}/{})",
@@ -465,7 +444,6 @@ impl DatabaseBackend for MongoBackend {
                                 current,
                                 total
                             );
-                            last_pct = pct;
                         }
                         if first {
                             first = false;
@@ -498,16 +476,9 @@ impl DatabaseBackend for MongoBackend {
                         .map_err(|e| format!("cursor: {e}"))?
                     {
                         current += 1;
-                        let pct = if total > 0 {
-                            (current
-                                .checked_mul(100)
-                                .and_then(|v| v.checked_div(total))
-                                .unwrap_or(0)) as i32
-                        } else {
-                            0
-                        };
-                        if pct != last_pct {
-                            progress.current.store(current, Ordering::Relaxed);
+                        let prev = last_pct;
+                        let pct = update_export_progress(progress, current, total, &mut last_pct);
+                        if pct != prev {
                             tdebug!(
                                 "mongodb",
                                 "export progress: {}% ({}/{})",
@@ -515,7 +486,6 @@ impl DatabaseBackend for MongoBackend {
                                 current,
                                 total
                             );
-                            last_pct = pct;
                         }
                         let date = doc.get_str("date").unwrap_or("");
                         let key = doc.get_str("key").unwrap_or("");

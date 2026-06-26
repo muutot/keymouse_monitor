@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- :recycle: [database]: deduplicate `write_json_str` and export-progress
+  helpers into `mod.rs` to eliminate 32 lines of identical code in
+  SQLite and MongoDB backends
 - :bug: [sqlite]: fix export crash when only one date boundary is provided —
   handle all four `(start,end)` combinations in SQL generation instead of
   assuming both-or-none, preventing bind-parameter mismatch at runtime
