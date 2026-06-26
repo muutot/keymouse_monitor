@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+- :zap: [core]: add 50ms debounce to SSE handler to coalesce rapid key
+  events into a single push, reducing frontend rendering load during bursts
+- :recycle: [core]: migrate from `std::sync::Mutex` to `parking_lot::Mutex`
+  to eliminate lock poisoning and remove all `.unwrap()` calls on lock
+- :wrench: [config]: log IO error via `twarn!()` when `config.json` read
+  fails, instead of silently falling back to defaults
+- :recycle: [rawinput]: replace `static mut` with `OnceLock` to shrink unsafe
+  code scope; add missing `# Safety` doc on `read_raw_input`
+- :bug: [sqlite,database]: validate table name on startup to prevent SQL
+  injection via config; reject negative counts and malformed dates during
+  `import_from_json` in both SQLite and MongoDB backends; use
+  `checked_mul`/`checked_div` in export progress to avoid arithmetic overflow
 - :sparkles: [export]: streaming JSON export with reactive SSE progress —
   replaces loading-all-into-memory with per-cursor streaming via
   `write_json_str`; adds date-range filtering, percentage-boundary progress

@@ -1,10 +1,10 @@
 #![windows_subsystem = "windows"]
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, atomic::AtomicUsize, OnceLock};
+use std::sync::{atomic::AtomicUsize, Arc, OnceLock};
 use std::time::Duration;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use tokio::sync::{watch, Notify};
 
 mod api;
@@ -53,7 +53,7 @@ fn check_help() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--help" || a == "-h") {
         eprintln!(
-"keymouse-monitor — real-time keyboard & mouse click statistics
+            "keymouse-monitor — real-time keyboard & mouse click statistics
 
 USAGE:
     keymouse-monitor.exe [OPTIONS]
@@ -61,7 +61,8 @@ USAGE:
 OPTIONS:
     -c, --console    Attach a console window (hidden by default, Windows only)
     -h, --help       Print this help message and exit
-");
+"
+        );
         std::process::exit(0);
     }
 }
@@ -82,7 +83,9 @@ async fn wait_for_shutdown() {
         }
     }
     #[cfg(not(windows))]
-    tokio::signal::ctrl_c().await.expect("failed to install Ctrl+C handler");
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install Ctrl+C handler");
 }
 
 #[tokio::main]
@@ -97,7 +100,10 @@ async fn main() {
 
     log::init_logger(&config.log);
 
-    tinfo!("main", "Full-featured keyboard and mouse recorder backend starting...");
+    tinfo!(
+        "main",
+        "Full-featured keyboard and mouse recorder backend starting..."
+    );
     tinfo!("main", "Backend: {}", config.database.backend);
     tinfo!("main", "Open index.html in a browser to view.");
 
@@ -108,9 +114,7 @@ async fn main() {
     let (db, data): (Arc<Mutex<Database>>, Arc<RwLock<MonitorData>>) =
         tokio::task::spawn_blocking(move || {
             let database = Arc::new(Mutex::new(Database::connect(&db_cfg)));
-            let monitor_data = Arc::new(RwLock::new(MonitorData::new(
-                &database.lock().unwrap(),
-            )));
+            let monitor_data = Arc::new(RwLock::new(MonitorData::new(&database.lock())));
             (database, monitor_data)
         })
         .await
@@ -163,13 +167,23 @@ async fn main() {
             let mode = update_mode_timer.clone();
             let _ = tokio::task::spawn_blocking(move || {
                 // Try reconnecting fallback primary (e.g. MongoDB) each tick
-                if let Ok(mut db_guard) = db.lock() {
-                    let _ = db_guard.try_reconnect();
-                }
+                let mut db_guard = db.lock();
+                let _ = db_guard.try_reconnect();
                 enum Action {
-                    Diff { date: String, delta: HashMap<String, u64> },
-                    Full { date: String, snapshot: HashMap<String, u64> },
-                    Rollover { old_date: String, yesterday: HashMap<String, u64>, today: String, today_base: HashMap<String, u64> },
+                    Diff {
+                        date: String,
+                        delta: HashMap<String, u64>,
+                    },
+                    Full {
+                        date: String,
+                        snapshot: HashMap<String, u64>,
+                    },
+                    Rollover {
+                        old_date: String,
+                        yesterday: HashMap<String, u64>,
+                        today: String,
+                        today_base: HashMap<String, u64>,
+                    },
                     Nothing,
                 }
                 let action: Action = {
@@ -182,13 +196,19 @@ async fn main() {
                             today_base: guard.base_counts.clone(),
                         },
                         Some(result) => match mode {
-                            UpdateMode::Diff => Action::Diff { date: result.date, delta: result.delta },
-                            UpdateMode::Full => Action::Full { date: result.date, snapshot: guard.get_key_counts() },
+                            UpdateMode::Diff => Action::Diff {
+                                date: result.date,
+                                delta: result.delta,
+                            },
+                            UpdateMode::Full => Action::Full {
+                                date: result.date,
+                                snapshot: guard.get_key_counts(),
+                            },
                         },
                         None => Action::Nothing,
                     }
                 };
-                let mut db_guard = db.lock().unwrap();
+                let mut db_guard = db.lock();
                 match action {
                     Action::Nothing => {}
                     Action::Diff { date, delta } => {
@@ -197,14 +217,20 @@ async fn main() {
                     Action::Full { date, snapshot } => {
                         db_guard.upsert_day_stats(&date, &snapshot);
                     }
-                    Action::Rollover { old_date, yesterday, today, today_base } => {
+                    Action::Rollover {
+                        old_date,
+                        yesterday,
+                        today,
+                        today_base,
+                    } => {
                         db_guard.upsert_day_stats(&old_date, &yesterday);
                         if !today_base.is_empty() {
                             db_guard.upsert_day_stats(&today, &today_base);
                         }
                     }
                 }
-            }).await;
+            })
+            .await;
         }
     });
 
@@ -217,9 +243,7 @@ async fn main() {
         .unwrap_or_else(|e| panic!("Failed to bind to {}: {}", addr, e));
     let server_handle = tokio::spawn(async move {
         let _ = axum::serve(listener, app)
-            .with_graceful_shutdown(async {
-                std::future::pending::<()>().await
-            })
+            .with_graceful_shutdown(async { std::future::pending::<()>().await })
             .await;
     });
 
@@ -239,11 +263,11 @@ async fn main() {
     let mode_shutdown = update_mode_shutdown;
     tokio::task::spawn_blocking(move || {
         let mut guard = data_clone.write();
-        let mut db_guard = db_clone.lock().unwrap();
+        let mut db_guard = db_clone.lock();
         guard.save_to_db(&mut db_guard, &mode_shutdown);
     })
     .await
-    .unwrap();
+    .ok();
 
     tinfo!("main", "Data saved. Goodbye!");
 

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Mutex,
+    Arc,
 };
 use std::time::{Duration, Instant};
 
@@ -18,7 +18,7 @@ use axum::{
 };
 use chrono::{Local, NaiveDate};
 use futures::stream::Stream;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::watch;
@@ -75,7 +75,10 @@ pub fn create_router(state: AppState) -> Router {
         .route("/events", get(sse_handler))
         .route("/api/export", get(export_handler))
         .route("/api/export/progress", get(export_progress_handler))
-        .route("/api/export/progress/stream", get(export_progress_sse_handler))
+        .route(
+            "/api/export/progress/stream",
+            get(export_progress_sse_handler),
+        )
         .route("/api/import", post(import_handler))
         .route("/api/version", get(version_handler))
         .nest_service("/static", ServeDir::new("static"))
@@ -111,7 +114,7 @@ async fn get_history(
     let start = params.start.clone();
     let end = params.end.clone();
     let result = tokio::task::spawn_blocking(move || {
-        let db = db.lock().unwrap();
+        let db = db.lock();
         db.get_stats_for_range(&start, &end)
     })
     .await
@@ -158,7 +161,14 @@ async fn export_handler(
     // Reset shared progress so a new export starts clean (no stale state)
     let _ = state.export_progress.send(None);
 
-    tdebug!("export", "Starting export: format={}, start={:?}, end={:?}, pretty={}", fmt, start, end, pretty);
+    tdebug!(
+        "export",
+        "Starting export: format={}, start={:?}, end={:?}, pretty={}",
+        fmt,
+        start,
+        end,
+        pretty
+    );
 
     let progress = Arc::new(ExportProgress::new());
     let tx = state.export_progress.clone();
@@ -171,7 +181,13 @@ async fn export_handler(
             let total = poll_progress.total.load(Ordering::Relaxed);
             let current = poll_progress.current.load(Ordering::Relaxed);
             if (current, total, done) != last_logged {
-                tdebug!("export", "progress tick: current={}, total={}, done={}", current, total, done);
+                tdebug!(
+                    "export",
+                    "progress tick: current={}, total={}, done={}",
+                    current,
+                    total,
+                    done
+                );
                 last_logged = (current, total, done);
             }
             if done || (total > 0 && current >= total) {
@@ -186,7 +202,7 @@ async fn export_handler(
 
     let export_prog = progress.clone();
     let json_result = tokio::task::spawn_blocking(move || {
-        let db = db.lock().unwrap();
+        let db = db.lock();
         db.export_to_json(&fmt_owned, start.as_deref(), end.as_deref(), &export_prog)
     })
     .await
@@ -197,7 +213,11 @@ async fn export_handler(
         )
     })?;
 
-    tdebug!("export", "export_to_json returned {} bytes", json_result.len());
+    tdebug!(
+        "export",
+        "export_to_json returned {} bytes",
+        json_result.len()
+    );
     progress.done.store(true, Ordering::Relaxed);
     let _ = tx.send(Some((u64::MAX, u64::MAX)));
     tdebug!("export", "done flag set, completion sentinel sent");
@@ -227,9 +247,7 @@ async fn export_handler(
         .expect("static response builder"))
 }
 
-async fn export_progress_handler(
-    State(state): State<AppState>,
-) -> Json<Value> {
+async fn export_progress_handler(State(state): State<AppState>) -> Json<Value> {
     let val = *state.export_progress.subscribe().borrow();
     progress_json(val)
 }
@@ -260,19 +278,16 @@ async fn export_progress_sse_handler(
     let _ = state.export_progress.send(None);
     let rx = state.export_progress.subscribe();
 
-    let stream = futures::stream::unfold(
-        (rx, None::<(u64, u64)>),
-        |(mut rx, last)| async move {
-            rx.changed().await.ok()?;
-            let val = *rx.borrow_and_update();
-            let json = progress_value(val);
-            let raw = val.unwrap_or((0, 0));
-            if Some(raw) != last {
-                tdebug!("export", "SSE pushing: {} (raw={:?})", json, raw);
-            }
-            Some((Ok(Event::default().data(json)), (rx, Some(raw))))
-        },
-    );
+    let stream = futures::stream::unfold((rx, None::<(u64, u64)>), |(mut rx, last)| async move {
+        rx.changed().await.ok()?;
+        let val = *rx.borrow_and_update();
+        let json = progress_value(val);
+        let raw = val.unwrap_or((0, 0));
+        if Some(raw) != last {
+            tdebug!("export", "SSE pushing: {} (raw={:?})", json, raw);
+        }
+        Some((Ok(Event::default().data(json)), (rx, Some(raw))))
+    });
 
     Sse::new(stream).keep_alive(
         axum::response::sse::KeepAlive::new()
@@ -295,7 +310,9 @@ fn progress_value(val: Option<(u64, u64)>) -> String {
             })
             .to_string()
         }
-        None => serde_json::json!({"current": 0, "total": 0, "done": false, "idle": true}).to_string(),
+        None => {
+            serde_json::json!({"current": 0, "total": 0, "done": false, "idle": true}).to_string()
+        }
     }
 }
 
@@ -321,12 +338,11 @@ async fn import_handler(
     let today = Local::now().format("%Y-%m-%d").to_string();
     let start = Instant::now();
     tokio::task::spawn_blocking(move || -> Result<(), String> {
-        let (has_today, today_counts): (bool, HashMap<String, u64>) = serde_json::from_str(&json_str)
-            .ok()
-            .and_then(|v: Value| {
-                v.get("records")
-                    .and_then(|r| r.as_object())
-                    .map(|records| {
+        let (has_today, today_counts): (bool, HashMap<String, u64>) =
+            serde_json::from_str(&json_str)
+                .ok()
+                .and_then(|v: Value| {
+                    v.get("records").and_then(|r| r.as_object()).map(|records| {
                         let counts = records
                             .get(&today)
                             .cloned()
@@ -334,11 +350,11 @@ async fn import_handler(
                             .unwrap_or_default();
                         (records.contains_key(&today), counts)
                     })
-            })
-            .unwrap_or_default();
+                })
+                .unwrap_or_default();
 
         {
-            let mut db_guard = db.lock().unwrap();
+            let mut db_guard = db.lock();
             db_guard.import_from_json(&json_str, mode)?;
         }
         if has_today || !today_counts.is_empty() {
@@ -392,6 +408,10 @@ async fn sse_handler(
             if !first && rx.changed().await.is_err() {
                 return None;
             }
+            // Coalesce rapid key events into a single push
+            if !first {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
             let json = {
                 let current = {
                     let guard = data.read();
@@ -420,7 +440,10 @@ async fn sse_handler(
                     serde_json::to_string(&delta).unwrap()
                 }
             };
-            Some((Ok(Event::default().data(json)), (data, rx, false, last, guard)))
+            Some((
+                Ok(Event::default().data(json)),
+                (data, rx, false, last, guard),
+            ))
         },
     );
 

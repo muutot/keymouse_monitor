@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
 use crate::{tinfo, twarn};
+pub use keymouse_common::config::{
+    DatabaseConfig, FallbackConfig, FallbackSyncMode, MongoConfig, SqliteConfig,
+};
 use serde::{Deserialize, Serialize};
-pub use keymouse_common::config::{DatabaseConfig, FallbackConfig, FallbackSyncMode, MongoConfig, SqliteConfig};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub enum UpdateMode {
@@ -93,19 +95,43 @@ impl Config {
     pub fn load() -> Self {
         let path = exe_dir().join("config.json");
         if path.exists() {
-            let content = std::fs::read_to_string(&path).unwrap_or_default();
+            let content = match std::fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(e) => {
+                    twarn!(
+                        "config",
+                        "Failed to read config.json ({}), using defaults",
+                        e
+                    );
+                    return Self::default();
+                }
+            };
             serde_json::from_str(&content).unwrap_or_else(|e| {
-                let cfg = Self::default();
-                twarn!("config", "Failed to parse config.json ({}), using defaults", e);
-                cfg
+                twarn!(
+                    "config",
+                    "Failed to parse config.json ({}), using defaults",
+                    e
+                );
+                Self::default()
             })
         } else {
             let cfg = Self::default();
-            tinfo!("config", "No config.json found, using default configuration");
+            tinfo!(
+                "config",
+                "No config.json found, using default configuration"
+            );
             tinfo!("config", "  backend: {}", cfg.database.backend);
             tinfo!("config", "  sqlite.path: {}", cfg.database.sqlite.path);
-            tinfo!("config", "  mongodb.protocol: {}", cfg.database.mongodb.protocol);
-            tinfo!("config", "  mongodb.database: {}", cfg.database.mongodb.database);
+            tinfo!(
+                "config",
+                "  mongodb.protocol: {}",
+                cfg.database.mongodb.protocol
+            );
+            tinfo!(
+                "config",
+                "  mongodb.database: {}",
+                cfg.database.mongodb.database
+            );
             tinfo!("config", "  port: {}", cfg.port);
             cfg
         }
