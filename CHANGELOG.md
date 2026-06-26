@@ -1,54 +1,66 @@
 # Changelog
 
-## [Unreleased]
+## [2.3.0]
 
-- :sparkles: [export]: per-session progress channels — replaces the single
-  global watch channel with a `HashMap<session_id, watch::Sender>`, so multiple
-  browser tabs or windows can run independent exports without cross-tab
-  interference; frontend generates a unique session id per export and passes
-  it to both `/api/export` and the SSE stream; `SessionGuard` cleans up on
-  client disconnect
-- :bug: [api]: fix date-range validation false positive when only `start` is
+### Features
+- (export) streaming JSON export with reactive SSE progress — replaces
+  loading-all-into-memory with per-cursor streaming via `write_json_str`;
+  adds date-range filtering, percentage-boundary progress updates, and a
+  frontend progress bar driven by `EventSource` — [`b5fde52`](https://github.com/muutot/keymouse_monitor/commit/b5fde52)
+- (export) per-session progress channels — replace the single global watch
+  channel with `HashMap<session_id, watch::Sender>` so multiple browser tabs
+  run independent exports without cross-tab interference; `SessionGuard`
+  cleans up on disconnect — [`948e2d0`](https://github.com/muutot/keymouse_monitor/commit/948e2d0)
+- (export,api) stop progress poller early when no SSE receivers — avoids
+  spinning when nothing is subscribed — [`aec825a`](https://github.com/muutot/keymouse_monitor/commit/aec825a)
+
+### Bug Fixes
+- (api) fix date-range validation false positive when only `start` is
   provided — old code compared the literal `"有效日期"` against `""`, always
-  returning a 400 error even for valid single-bound requests
-- :bug: [timer]: fix deadlock in automatic reconnect block — scope the
+  returning a 400 error even for valid single-bound requests — [`e64ea8d`](https://github.com/muutot/keymouse_monitor/commit/e64ea8d)
+- (timer) fix deadlock in automatic reconnect block — scope the
   `parking_lot::Mutex` guard so it drops before the second `db.lock()`,
-  preventing deadlock on the non-reentrant mutex
-- :recycle: [database]: deduplicate `write_json_str` and export-progress
-  helpers into `mod.rs`, eliminating 32 lines of identical code in the
-  SQLite and MongoDB backends
-- :bug: [main]: log final-save error via `terror!()` instead of silently
-  discarding the `JoinError` from `spawn_blocking`
-- :zap: [build]: switch release profile from `opt-level = "z"` to
-  `opt-level = 3` for faster runtime execution
-- :art: [lint]: fix clippy warnings — add `BenchFn` type alias in mouse_bench
-  for `type_complexity`, remove redundant `.trim()` in changelog_fmt
-- :memo: [readme]: fix stale `src/maps.rs` → `common/src/maps.rs` path
-- :zap: [core]: add 50ms debounce to SSE handler to coalesce rapid key events
-  into a single push, reducing frontend rendering load during bursts
-- :recycle: [core]: migrate from `std::sync::Mutex` to `parking_lot::Mutex`
-  to eliminate lock poisoning and remove all `.unwrap()` calls on lock
-- :wrench: [config]: log IO error via `twarn!()` when `config.json` read
-  fails, instead of silently falling back to defaults
-- :recycle: [rawinput]: replace `static mut CB` with `OnceLock` to shrink
-  unsafe code scope; add missing `# Safety` doc on `read_raw_input`
-- :bug: [sqlite,database]: validate table name on startup to prevent SQL
-  injection via config; reject negative counts and malformed dates during
-  `import_from_json` in both backends; use `checked_mul`/`checked_div` in
-  export progress to avoid arithmetic overflow
-- :sparkles: [export]: streaming JSON export with reactive SSE progress —
-  replaces loading-all-into-memory with per-cursor streaming via
-  `write_json_str`; adds date-range filtering, percentage-boundary progress
-  updates, and a frontend progress bar driven by `EventSource`
-- :zap: [export,mongodb]: switch from `find()` to `aggregate($match+$sort)`
-  with `allow_disk_use(true)` and `batch_size(5000)` for better Atlas
-  compatibility and reduced memory pressure
-- :bug: [api]: fix import not updating in-memory today data when the record
-  exists but has no key counts — narrows `data.write()` lock scope to only
-  cover the today-data update, avoiding unnecessary lock contention
-- :wrench: [changelog_fmt]: relax format test assertion from a hardcoded
-  `MAX_ALLOWED=1` to `formatted_errs <= original_errs`, making the test
-  resilient to the current checked-in CHANGELOG state
+  preventing deadlock on the non-reentrant mutex — [`e64ea8d`](https://github.com/muutot/keymouse_monitor/commit/e64ea8d)
+- (main) log final-save error via `terror!()` instead of silently discarding
+  the `JoinError` from `spawn_blocking` — [`9b463aa`](https://github.com/muutot/keymouse_monitor/commit/9b463aa)
+- (sqlite) fix single-date-bound export crash — match all four (start,end)
+  date combinations instead of both-or-nothing so `COUNT(*)` SQL always
+  matches the params passed; change total from `i64` to `u64` with `.max(0)`
+  to prevent negative `COUNT(*)` from wrapping — [`99a0254`](https://github.com/muutot/keymouse_monitor/commit/99a0254)
+- (sqlite,database) validate table name on startup to prevent SQL injection
+  via config; reject negative u64 counts and bad dates in `import_from_json`
+  for both backends — ([`d108615`](https://github.com/muutot/keymouse_monitor/commit/d108615), [`99a0254`](https://github.com/muutot/keymouse_monitor/commit/99a0254))
+- (api) fix import not updating in-memory today data when the record exists
+  but has no key counts — narrows `data.write()` lock scope to only cover
+  the today-data update, avoiding unnecessary lock contention — [`5626867`](https://github.com/muutot/keymouse_monitor/commit/5626867)
+
+### Refactoring
+- (database) deduplicate `write_json_str` and export-progress helpers into `mod.rs` —
+  eliminates 32 lines of identical code in SQLite/MongoDB backends — [`d6eb5c0`](https://github.com/muutot/keymouse_monitor/commit/d6eb5c0)
+- (core) migrate from `std::sync::Mutex` to `parking_lot::Mutex` in `main.rs`
+  and `api.rs` to eliminate lock poisoning and redundant `.unwrap()` calls
+  on lock — [`d9d5b86`](https://github.com/muutot/keymouse_monitor/commit/d9d5b86)
+- (rawinput) replace `static mut CB` with `OnceLock`; remove unused
+  `KEYBOARD_HOOK` static; shrink `unsafe {}` to FFI calls only; add missing
+  `# Safety` doc to `read_raw_input` — [`d108615`](https://github.com/muutot/keymouse_monitor/commit/d108615)
+
+### Performance
+- (core) add 50ms debounce to SSE handler to coalesce rapid key events into
+  a single push, reducing frontend rendering load during bursts — [`d9d5b86`](https://github.com/muutot/keymouse_monitor/commit/d9d5b86)
+- (export,mongodb) switch from `find()` to `aggregate($match+$sort)` with
+  `allow_disk_use(true)` and `batch_size(5000)` for better Atlas
+  compatibility and reduced memory pressure — [`b5fde52`](https://github.com/muutot/keymouse_monitor/commit/b5fde52)
+- (build) switch release profile from `opt-level = "z"` to `opt-level = 3` for
+  faster runtime execution — [`cc6c8e9`](https://github.com/muutot/keymouse_monitor/commit/cc6c8e9)
+
+### Chores
+- (config) log IO error via `twarn!()` when `config.json` read fails, instead of
+  silently falling back to defaults — [`d9d5b86`](https://github.com/muutot/keymouse_monitor/commit/d9d5b86)
+- (lint) fix clippy warnings — add `BenchFn` type alias in mouse_bench for
+  `type_complexity`, remove redundant `.trim()` in changelog_fmt — [`cc6c8e9`](https://github.com/muutot/keymouse_monitor/commit/cc6c8e9)
+- (readme) fix stale `src/maps.rs` → `common/src/maps.rs` path — [`cc6c8e9`](https://github.com/muutot/keymouse_monitor/commit/cc6c8e9)
+- (changelog_fmt) relax format test assertion to `formatted_errs <= original_errs`,
+  making the test resilient to the current checked-in CHANGELOG state — [`5626867`](https://github.com/muutot/keymouse_monitor/commit/5626867)
 
 ## [2.2.0]
 
