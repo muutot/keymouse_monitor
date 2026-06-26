@@ -15,7 +15,9 @@ fn validate_identifier(name: &str, label: &str) -> Result<(), String> {
     if name.len() > 64 {
         return Err(format!("SQLite {} '{}' exceeds 64 characters", label, name));
     }
-    let first = name.chars().next().unwrap();
+    let Some(first) = name.chars().next() else {
+        return Err(format!("SQLite {} '{}' has no characters", label, name));
+    };
     if !first.is_ascii_alphabetic() && first != '_' {
         return Err(format!(
             "SQLite {} '{}' must start with a letter or underscore",
@@ -357,44 +359,68 @@ impl DatabaseBackend for SqliteBackend {
         end_date: Option<&str>,
         progress: &ExportProgress,
     ) -> Result<String, String> {
-        let (sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match (start_date, end_date) {
-            (Some(s), Some(e)) => (
-                format!(
-                    "SELECT date, key, count FROM {} WHERE date >= ?1 AND date <= ?2 ORDER BY date, key",
-                    self.table_name
+        fn param(s: &str) -> Box<dyn rusqlite::types::ToSql> {
+            Box::new(s.to_string())
+        }
+        let (sql, count_sql, params): (String, String, Vec<Box<dyn rusqlite::types::ToSql>>) =
+            match (start_date, end_date) {
+                (Some(s), Some(e)) => (
+                    format!(
+                        "SELECT date, key, count FROM {} WHERE date >= ?1 AND date <= ?2 ORDER BY date, key",
+                        self.table_name
+                    ),
+                    format!(
+                        "SELECT COUNT(*) FROM {} WHERE date >= ?1 AND date <= ?2",
+                        self.table_name
+                    ),
+                    vec![param(s), param(e)],
                 ),
-                vec![Box::new(s.to_string()), Box::new(e.to_string())],
-            ),
-            _ => (
-                format!(
-                    "SELECT date, key, count FROM {} ORDER BY date, key",
-                    self.table_name
+                (Some(s), None) => (
+                    format!(
+                        "SELECT date, key, count FROM {} WHERE date >= ?1 ORDER BY date, key",
+                        self.table_name
+                    ),
+                    format!(
+                        "SELECT COUNT(*) FROM {} WHERE date >= ?1",
+                        self.table_name
+                    ),
+                    vec![param(s)],
                 ),
-                vec![],
-            ),
-        };
+                (None, Some(e)) => (
+                    format!(
+                        "SELECT date, key, count FROM {} WHERE date <= ?1 ORDER BY date, key",
+                        self.table_name
+                    ),
+                    format!(
+                        "SELECT COUNT(*) FROM {} WHERE date <= ?1",
+                        self.table_name
+                    ),
+                    vec![param(e)],
+                ),
+                (None, None) => (
+                    format!(
+                        "SELECT date, key, count FROM {} ORDER BY date, key",
+                        self.table_name
+                    ),
+                    format!("SELECT COUNT(*) FROM {}", self.table_name),
+                    vec![],
+                ),
+            };
 
         let params_refs: Vec<&dyn rusqlite::types::ToSql> =
             params.iter().map(|p| p.as_ref()).collect();
 
-        // Count total
-        let count_sql = if start_date.is_some() {
-            format!(
-                "SELECT COUNT(*) FROM {} WHERE date >= ?1 AND date <= ?2",
-                self.table_name
-            )
-        } else {
-            format!("SELECT COUNT(*) FROM {}", self.table_name)
-        };
-        let total: i64 = {
+        let total: u64 = {
             let mut stmt = self
                 .conn
                 .prepare_cached(&count_sql)
                 .map_err(|e| format!("prepare count: {e}"))?;
-            stmt.query_row(params_refs.as_slice(), |row| row.get::<_, i64>(0))
-                .map_err(|e| format!("count: {e}"))?
+            let count: i64 = stmt
+                .query_row(params_refs.as_slice(), |row| row.get::<_, i64>(0))
+                .map_err(|e| format!("count: {e}"))?;
+            count.max(0) as u64
         };
-        progress.total.store(total as u64, Ordering::Relaxed);
+        progress.total.store(total, Ordering::Relaxed);
 
         let mut stmt = self
             .conn
@@ -426,7 +452,7 @@ impl DatabaseBackend for SqliteBackend {
                     let pct = if total > 0 {
                         (current
                             .checked_mul(100)
-                            .and_then(|v| v.checked_div(total as u64))
+                            .and_then(|v| v.checked_div(total))
                             .unwrap_or(0)) as i32
                     } else {
                         0
@@ -472,7 +498,7 @@ impl DatabaseBackend for SqliteBackend {
                     let pct = if total > 0 {
                         (current
                             .checked_mul(100)
-                            .and_then(|v| v.checked_div(total as u64))
+                            .and_then(|v| v.checked_div(total))
                             .unwrap_or(0)) as i32
                     } else {
                         0

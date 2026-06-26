@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- :bug: [sqlite]: fix export crash when only one date boundary is provided —
+  handle all four `(start,end)` combinations in SQL generation instead of
+  assuming both-or-none, preventing bind-parameter mismatch at runtime
 - :zap: [build]: switch release profile from `opt-level = "z"` to
   `opt-level = 3` for faster runtime execution
 - :art: [lint]: fix clippy warnings — add `BenchFn` type alias in mouse_bench
