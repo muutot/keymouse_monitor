@@ -9,7 +9,7 @@ use mongodb::options::{DeleteManyModel, InsertOneModel, UpdateOneModel, WriteMod
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Runtime;
 
-use crate::{tinfo, twarn, tdebug, config::MongoConfig};
+use crate::{config::MongoConfig, tdebug, tinfo, twarn};
 use keymouse_common::database::{build_uri, redact_credentials};
 
 use super::{BackendType, DatabaseBackend, ExportProgress, ImportMode};
@@ -43,8 +43,10 @@ impl MongoBackend {
                 twarn!("mongodb", "The application will retry on each data save.");
                 let client = rt
                     .block_on(async {
-                        mongodb::Client::with_uri_str("mongodb://127.0.0.1:1/?serverSelectionTimeoutMS=1")
-                            .await
+                        mongodb::Client::with_uri_str(
+                            "mongodb://127.0.0.1:1/?serverSelectionTimeoutMS=1",
+                        )
+                        .await
                     })
                     .expect("placeholder URI is valid");
                 return Self {
@@ -58,15 +60,26 @@ impl MongoBackend {
 
         let db_name = cfg.database.clone();
         let collection_name = cfg.collection.clone();
-        let backend = Self { rt, client, db_name, collection_name };
+        let backend = Self {
+            rt,
+            client,
+            db_name,
+            collection_name,
+        };
         if let Err(e) = backend.init_db() {
             twarn!("mongodb", "\n⚠ MongoDB connection failed:");
             twarn!("mongodb", "  {e}");
             twarn!("mongodb", "  \nPossible causes:");
-            twarn!("mongodb", "    • Network/firewall blocking Atlas (check your VPN/proxy)");
+            twarn!(
+                "mongodb",
+                "    • Network/firewall blocking Atlas (check your VPN/proxy)"
+            );
             twarn!("mongodb", "    • IP not whitelisted in Atlas console");
             twarn!("mongodb", "    • Wrong credentials in config.json");
-            twarn!("mongodb", "  \nThe application will retry on each data save.\n");
+            twarn!(
+                "mongodb",
+                "  \nThe application will retry on each data save.\n"
+            );
         }
         backend
     }
@@ -120,10 +133,7 @@ impl MongoBackend {
             let mut flat_docs = Vec::new();
             while let Some(old_doc) = cursor.try_next().await.unwrap_or(None) {
                 let date = old_doc.get_str("date").ok().map(String::from);
-                let data = old_doc
-                    .get_document("data")
-                    .ok()
-                    .cloned();
+                let data = old_doc.get_document("data").ok().cloned();
                 if let (Some(date), Some(data)) = (date, data) {
                     for (key, value) in data.iter() {
                         if let Some(count) = value.as_i64() {
@@ -150,11 +160,15 @@ impl MongoBackend {
     }
 
     fn raw_collection(&self) -> mongodb::Collection<Document> {
-        self.client.database(&self.db_name).collection(&self.collection_name)
+        self.client
+            .database(&self.db_name)
+            .collection(&self.collection_name)
     }
 
     fn flat_collection(&self) -> mongodb::Collection<FlatStat> {
-        self.client.database(&self.db_name).collection(&self.collection_name)
+        self.client
+            .database(&self.db_name)
+            .collection(&self.collection_name)
     }
 }
 
@@ -200,14 +214,22 @@ impl DatabaseBackend for MongoBackend {
                 .await
                 .map_err(|e| format!("query day stats: {e}"))?;
             let mut result = HashMap::new();
-            while let Some(stat) = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))? {
+            while let Some(stat) = cursor
+                .try_next()
+                .await
+                .map_err(|e| format!("cursor: {e}"))?
+            {
                 result.insert(stat.key, stat.count);
             }
             Ok(result)
         })
     }
 
-    fn get_stats_for_range(&self, start_date: &str, end_date: &str) -> Result<HashMap<String, u64>, String> {
+    fn get_stats_for_range(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<HashMap<String, u64>, String> {
         let raw = self.raw_collection();
         let pipeline = vec![
             doc! { "$match": { "date": { "$gte": start_date, "$lte": end_date } } },
@@ -227,7 +249,10 @@ impl DatabaseBackend for MongoBackend {
             let mut process_total = Duration::ZERO;
             loop {
                 let fetch_start = Instant::now();
-                let result = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))?;
+                let result = cursor
+                    .try_next()
+                    .await
+                    .map_err(|e| format!("cursor: {e}"))?;
                 network_total += fetch_start.elapsed();
 
                 let Some(doc) = result else { break };
@@ -244,7 +269,8 @@ impl DatabaseBackend for MongoBackend {
             }
             let t2 = Instant::now();
 
-            tdebug!("mongodb",
+            tdebug!(
+                "mongodb",
                 "get_stats_for_range(start={}, end={}): \
                  aggregate(server)={:?}, iterate(network)={:?}, \
                  iterate(process)={:?} ({} docs), total={:?}",
@@ -304,7 +330,8 @@ impl DatabaseBackend for MongoBackend {
             }
             let t1 = Instant::now();
 
-            tdebug!("mongodb",
+            tdebug!(
+                "mongodb",
                 "upsert_day_stats({}): {:?} ({} keys{})",
                 date_str,
                 t1 - t0,
@@ -315,7 +342,11 @@ impl DatabaseBackend for MongoBackend {
         })
     }
 
-    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) -> Result<(), String> {
+    fn merge_incremental_stats(
+        &self,
+        date_str: &str,
+        data: &HashMap<String, u64>,
+    ) -> Result<(), String> {
         let raw = self.raw_collection();
         let ns = raw.namespace();
         let client = &self.client;
@@ -323,7 +354,11 @@ impl DatabaseBackend for MongoBackend {
         let key_count = data.len();
 
         if data.is_empty() {
-            tdebug!("mongodb", "merge_incremental_stats({}): empty, nothing to do", date_str);
+            tdebug!(
+                "mongodb",
+                "merge_incremental_stats({}): empty, nothing to do",
+                date_str
+            );
             return Ok(());
         }
 
@@ -347,7 +382,8 @@ impl DatabaseBackend for MongoBackend {
                 .map_err(|e| format!("merge inc stats: {e}"))?;
             let t1 = Instant::now();
 
-            tdebug!("mongodb",
+            tdebug!(
+                "mongodb",
                 "merge_incremental_stats({}): bulk_write={:?} ({} keys)",
                 date_str,
                 t1 - t0,
@@ -406,12 +442,29 @@ impl DatabaseBackend for MongoBackend {
                     let mut first = true;
                     let mut current = 0u64;
                     let mut last_pct = -1i32;
-                    while let Some(doc) = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))? {
+                    while let Some(doc) = cursor
+                        .try_next()
+                        .await
+                        .map_err(|e| format!("cursor: {e}"))?
+                    {
                         current += 1;
-                        let pct = if total > 0 { (current * 100 / total) as i32 } else { 0 };
+                        let pct = if total > 0 {
+                            (current
+                                .checked_mul(100)
+                                .and_then(|v| v.checked_div(total))
+                                .unwrap_or(0)) as i32
+                        } else {
+                            0
+                        };
                         if pct != last_pct {
                             progress.current.store(current, Ordering::Relaxed);
-                            tdebug!("mongodb", "export progress: {}% ({}/{})", pct, current, total);
+                            tdebug!(
+                                "mongodb",
+                                "export progress: {}% ({}/{})",
+                                pct,
+                                current,
+                                total
+                            );
                             last_pct = pct;
                         }
                         if first {
@@ -439,12 +492,29 @@ impl DatabaseBackend for MongoBackend {
                     let mut current_date = String::new();
                     let mut current = 0u64;
                     let mut last_pct = -1i32;
-                    while let Some(doc) = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))? {
+                    while let Some(doc) = cursor
+                        .try_next()
+                        .await
+                        .map_err(|e| format!("cursor: {e}"))?
+                    {
                         current += 1;
-                        let pct = if total > 0 { (current * 100 / total) as i32 } else { 0 };
+                        let pct = if total > 0 {
+                            (current
+                                .checked_mul(100)
+                                .and_then(|v| v.checked_div(total))
+                                .unwrap_or(0)) as i32
+                        } else {
+                            0
+                        };
                         if pct != last_pct {
                             progress.current.store(current, Ordering::Relaxed);
-                            tdebug!("mongodb", "export progress: {}% ({}/{})", pct, current, total);
+                            tdebug!(
+                                "mongodb",
+                                "export progress: {}% ({}/{})",
+                                pct,
+                                current,
+                                total
+                            );
                             last_pct = pct;
                         }
                         let date = doc.get_str("date").unwrap_or("");
@@ -477,15 +547,20 @@ impl DatabaseBackend for MongoBackend {
                     current
                 }
             };
-            tdebug!("mongodb", "export cursor exhausted: processed={}, expected={}", processed, total);
+            tdebug!(
+                "mongodb",
+                "export cursor exhausted: processed={}, expected={}",
+                processed,
+                total
+            );
             out.push('}');
             Ok(out)
         })
     }
 
     fn import_from_json(&mut self, json_str: &str, mode: ImportMode) -> Result<(), String> {
-        let value: serde_json::Value = serde_json::from_str(json_str)
-            .map_err(|e| format!("parse json: {e}"))?;
+        let value: serde_json::Value =
+            serde_json::from_str(json_str).map_err(|e| format!("parse json: {e}"))?;
 
         let records_map: HashMap<String, HashMap<String, u64>> = match value["records"] {
             serde_json::Value::Object(ref obj) => {
@@ -506,7 +581,10 @@ impl DatabaseBackend for MongoBackend {
                 for item in arr {
                     let date = item["date"].as_str().map(String::from);
                     let key = item["key"].as_str().map(String::from);
-                    let count = item["count"].as_i64().unwrap_or(0) as u64;
+                    let count = item["count"]
+                        .as_i64()
+                        .and_then(|v| if v >= 0 { Some(v as u64) } else { None })
+                        .unwrap_or(0);
                     if let (Some(date), Some(key)) = (date, key) {
                         map.entry(date).or_default().insert(key, count);
                     }
@@ -518,9 +596,16 @@ impl DatabaseBackend for MongoBackend {
                 map
             }
             _ => {
-                return Err("Import JSON 'records' must be an object (nested) or array (flat)".to_string());
+                return Err(
+                    "Import JSON 'records' must be an object (nested) or array (flat)".to_string(),
+                );
             }
         };
+
+        for date in records_map.keys() {
+            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+                .map_err(|_| format!("Invalid date '{}': expected YYYY-MM-DD format", date))?;
+        }
 
         let total = records_map.len();
         let dates: Vec<&str> = records_map.keys().map(|s| s.as_str()).collect();
@@ -558,7 +643,11 @@ impl DatabaseBackend for MongoBackend {
                         .find(filter)
                         .await
                         .map_err(|e| format!("query for merge: {e}"))?;
-                    while let Some(d) = cursor.try_next().await.map_err(|e| format!("cursor: {e}"))? {
+                    while let Some(d) = cursor
+                        .try_next()
+                        .await
+                        .map_err(|e| format!("cursor: {e}"))?
+                    {
                         if let (Some(date), Some(key), Some(count)) = (
                             d.get_str("date").ok().map(String::from),
                             d.get_str("key").ok().map(String::from),
@@ -599,9 +688,11 @@ impl DatabaseBackend for MongoBackend {
             Ok::<(), String>(())
         })?;
 
-        tinfo!("mongodb",
+        tinfo!(
+            "mongodb",
             "Imported {} date records from JSON (mode: {:?}).",
-            total, mode
+            total,
+            mode
         );
         Ok(())
     }

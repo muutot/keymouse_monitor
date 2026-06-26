@@ -4,9 +4,48 @@ use std::time::Instant;
 
 use rusqlite::Connection;
 
-use crate::{tinfo, twarn, tdebug, config::SqliteConfig};
+use crate::{config::SqliteConfig, tdebug, tinfo, twarn};
 
 use super::{BackendType, DatabaseBackend, ExportProgress, ImportMode};
+
+fn validate_identifier(name: &str, label: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err(format!("SQLite {} must not be empty", label));
+    }
+    if name.len() > 64 {
+        return Err(format!("SQLite {} '{}' exceeds 64 characters", label, name));
+    }
+    let first = name.chars().next().unwrap();
+    if !first.is_ascii_alphabetic() && first != '_' {
+        return Err(format!(
+            "SQLite {} '{}' must start with a letter or underscore",
+            label, name
+        ));
+    }
+    for c in name.chars() {
+        if !c.is_ascii_alphanumeric() && c != '_' {
+            return Err(format!(
+                "SQLite {} '{}' contains invalid character '{}'",
+                label, name, c
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_count(v: i64) -> Option<u64> {
+    if v >= 0 {
+        Some(v as u64)
+    } else {
+        None
+    }
+}
+
+fn validate_date(date: &str) -> Result<(), String> {
+    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .map_err(|_| format!("Invalid date '{}': expected YYYY-MM-DD format", date))?;
+    Ok(())
+}
 
 pub struct SqliteBackend {
     conn: Connection,
@@ -15,6 +54,7 @@ pub struct SqliteBackend {
 
 impl SqliteBackend {
     pub fn new(cfg: &SqliteConfig) -> Self {
+        validate_identifier(&cfg.table, "table name").unwrap_or_else(|e| panic!("{}", e));
         let conn = Connection::open(&cfg.path).expect("Failed to open database");
         conn.execute_batch("PRAGMA journal_mode=WAL")
             .expect("Failed to set WAL mode");
@@ -64,14 +104,13 @@ impl SqliteBackend {
                      PRIMARY KEY (date, key))",
                     tmp_table
                 );
-                self.conn.execute_batch(&create_sql)
+                self.conn
+                    .execute_batch(&create_sql)
                     .expect("Failed to create new table");
 
                 let mut stmt = self
                     .conn
-                    .prepare_cached(&format!(
-                        "SELECT date, data FROM {}", self.table_name
-                    ))
+                    .prepare_cached(&format!("SELECT date, data FROM {}", self.table_name))
                     .expect("Failed to prepare old data SELECT");
                 let results: Vec<(String, String)> = stmt
                     .query_map([], |row| {
@@ -115,7 +154,9 @@ impl SqliteBackend {
                  PRIMARY KEY (date, key))",
                 self.table_name
             );
-            self.conn.execute_batch(&sql).expect("Failed to create table");
+            self.conn
+                .execute_batch(&sql)
+                .expect("Failed to create table");
         }
 
         tinfo!("sqlite", "Database initialization complete.");
@@ -123,10 +164,16 @@ impl SqliteBackend {
 
     /// Get distinct dates that have data (used for fallback sync).
     pub fn get_dates(&self) -> Result<Vec<String>, String> {
-        let sql = format!("SELECT DISTINCT date FROM {} ORDER BY date", self.table_name);
-        let mut stmt = self.conn.prepare_cached(&sql)
+        let sql = format!(
+            "SELECT DISTINCT date FROM {} ORDER BY date",
+            self.table_name
+        );
+        let mut stmt = self
+            .conn
+            .prepare_cached(&sql)
             .map_err(|e| format!("prepare dates: {e}"))?;
-        let dates = stmt.query_map([], |row| row.get::<_, String>(0))
+        let dates = stmt
+            .query_map([], |row| row.get::<_, String>(0))
             .map_err(|e| format!("query dates: {e}"))?
             .filter_map(|r| r.ok())
             .collect();
@@ -136,7 +183,8 @@ impl SqliteBackend {
     /// Delete all data (used after syncing fallback to primary).
     pub fn clear_all(&self) -> Result<(), String> {
         let sql = format!("DELETE FROM {}", self.table_name);
-        self.conn.execute(&sql, [])
+        self.conn
+            .execute(&sql, [])
             .map_err(|e| format!("clear fallback: {e}"))?;
         Ok(())
     }
@@ -148,15 +196,13 @@ impl DatabaseBackend for SqliteBackend {
     }
 
     fn try_ping(&self) -> Result<(), String> {
-        self.conn.execute_batch("SELECT 1")
+        self.conn
+            .execute_batch("SELECT 1")
             .map_err(|e| format!("sqlite ping: {e}"))
     }
 
     fn get_stats_for_day(&self, date_str: &str) -> Result<HashMap<String, u64>, String> {
-        let sql = format!(
-            "SELECT key, count FROM {} WHERE date = ?1",
-            self.table_name
-        );
+        let sql = format!("SELECT key, count FROM {} WHERE date = ?1", self.table_name);
         let mut stmt = self
             .conn
             .prepare_cached(&sql)
@@ -211,13 +257,21 @@ impl DatabaseBackend for SqliteBackend {
 
         if data.is_empty() {
             let delete_sql = format!("DELETE FROM {} WHERE date = ?1", self.table_name);
-            self.conn.execute(&delete_sql, [date_str])
+            self.conn
+                .execute(&delete_sql, [date_str])
                 .map_err(|e| format!("delete empty: {e}"))?;
-            tdebug!("sqlite", "upsert_day_stats({}): delete only (empty), total={:?}", date_str, t0.elapsed());
+            tdebug!(
+                "sqlite",
+                "upsert_day_stats({}): delete only (empty), total={:?}",
+                date_str,
+                t0.elapsed()
+            );
             return Ok(());
         }
 
-        let tx = self.conn.unchecked_transaction()
+        let tx = self
+            .conn
+            .unchecked_transaction()
             .map_err(|e| format!("begin tx: {e}"))?;
         let delete_sql = format!("DELETE FROM {} WHERE date = ?1", self.table_name);
         tx.execute(&delete_sql, [date_str])
@@ -227,7 +281,8 @@ impl DatabaseBackend for SqliteBackend {
             self.table_name
         );
         {
-            let mut stmt = tx.prepare_cached(&upsert_sql)
+            let mut stmt = tx
+                .prepare_cached(&upsert_sql)
                 .map_err(|e| format!("prepare upsert: {e}"))?;
             for (key, count) in data {
                 stmt.execute([date_str, key, &count.to_string()])
@@ -237,7 +292,8 @@ impl DatabaseBackend for SqliteBackend {
         tx.commit().map_err(|e| format!("commit: {e}"))?;
         let elapsed = t0.elapsed();
 
-        tdebug!("sqlite",
+        tdebug!(
+            "sqlite",
             "upsert_day_stats({}): tx={:?} ({} keys)",
             date_str,
             elapsed,
@@ -246,16 +302,26 @@ impl DatabaseBackend for SqliteBackend {
         Ok(())
     }
 
-    fn merge_incremental_stats(&self, date_str: &str, data: &HashMap<String, u64>) -> Result<(), String> {
+    fn merge_incremental_stats(
+        &self,
+        date_str: &str,
+        data: &HashMap<String, u64>,
+    ) -> Result<(), String> {
         let t0 = Instant::now();
         let key_count = data.len();
 
         if data.is_empty() {
-            tdebug!("sqlite", "merge_incremental_stats({}): empty, nothing to do", date_str);
+            tdebug!(
+                "sqlite",
+                "merge_incremental_stats({}): empty, nothing to do",
+                date_str
+            );
             return Ok(());
         }
 
-        let tx = self.conn.unchecked_transaction()
+        let tx = self
+            .conn
+            .unchecked_transaction()
             .map_err(|e| format!("begin tx: {e}"))?;
         let upsert_sql = format!(
             "INSERT INTO {} (date, key, count) VALUES (?1, ?2, ?3) \
@@ -263,7 +329,8 @@ impl DatabaseBackend for SqliteBackend {
             self.table_name
         );
         {
-            let mut stmt = tx.prepare_cached(&upsert_sql)
+            let mut stmt = tx
+                .prepare_cached(&upsert_sql)
                 .map_err(|e| format!("prepare inc upsert: {e}"))?;
             for (key, count) in data {
                 stmt.execute([date_str, key, &count.to_string()])
@@ -273,7 +340,8 @@ impl DatabaseBackend for SqliteBackend {
         tx.commit().map_err(|e| format!("commit: {e}"))?;
         let elapsed = t0.elapsed();
 
-        tdebug!("sqlite",
+        tdebug!(
+            "sqlite",
             "merge_incremental_stats({}): tx={:?} ({} keys)",
             date_str,
             elapsed,
@@ -306,7 +374,8 @@ impl DatabaseBackend for SqliteBackend {
             ),
         };
 
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
 
         // Count total
         let count_sql = if start_date.is_some() {
@@ -318,16 +387,21 @@ impl DatabaseBackend for SqliteBackend {
             format!("SELECT COUNT(*) FROM {}", self.table_name)
         };
         let total: i64 = {
-            let mut stmt = self.conn.prepare_cached(&count_sql)
+            let mut stmt = self
+                .conn
+                .prepare_cached(&count_sql)
                 .map_err(|e| format!("prepare count: {e}"))?;
             stmt.query_row(params_refs.as_slice(), |row| row.get::<_, i64>(0))
                 .map_err(|e| format!("count: {e}"))?
         };
         progress.total.store(total as u64, Ordering::Relaxed);
 
-        let mut stmt = self.conn.prepare_cached(&sql)
+        let mut stmt = self
+            .conn
+            .prepare_cached(&sql)
             .map_err(|e| format!("prepare export: {e}"))?;
-        let mut rows = stmt.query(params_refs.as_slice())
+        let mut rows = stmt
+            .query(params_refs.as_slice())
             .map_err(|e| format!("query export: {e}"))?;
 
         let exported_at = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
@@ -349,10 +423,23 @@ impl DatabaseBackend for SqliteBackend {
                 let mut last_pct = -1i32;
                 while let Some(row) = rows.next().map_err(|e| format!("row: {e}"))? {
                     current += 1;
-                    let pct = if total > 0 { (current * 100 / total as u64) as i32 } else { 0 };
+                    let pct = if total > 0 {
+                        (current
+                            .checked_mul(100)
+                            .and_then(|v| v.checked_div(total as u64))
+                            .unwrap_or(0)) as i32
+                    } else {
+                        0
+                    };
                     if pct != last_pct {
                         progress.current.store(current, Ordering::Relaxed);
-                        tdebug!("sqlite", "export progress: {}% ({}/{})", pct, current, total);
+                        tdebug!(
+                            "sqlite",
+                            "export progress: {}% ({}/{})",
+                            pct,
+                            current,
+                            total
+                        );
                         last_pct = pct;
                     }
                     if first {
@@ -382,10 +469,23 @@ impl DatabaseBackend for SqliteBackend {
                 let mut last_pct = -1i32;
                 while let Some(row) = rows.next().map_err(|e| format!("row: {e}"))? {
                     current += 1;
-                    let pct = if total > 0 { (current * 100 / total as u64) as i32 } else { 0 };
+                    let pct = if total > 0 {
+                        (current
+                            .checked_mul(100)
+                            .and_then(|v| v.checked_div(total as u64))
+                            .unwrap_or(0)) as i32
+                    } else {
+                        0
+                    };
                     if pct != last_pct {
                         progress.current.store(current, Ordering::Relaxed);
-                        tdebug!("sqlite", "export progress: {}% ({}/{})", pct, current, total);
+                        tdebug!(
+                            "sqlite",
+                            "export progress: {}% ({}/{})",
+                            pct,
+                            current,
+                            total
+                        );
                         last_pct = pct;
                     }
                     let date: String = row.get(0).map_err(|e| format!("get date: {e}"))?;
@@ -418,14 +518,19 @@ impl DatabaseBackend for SqliteBackend {
                 current
             }
         };
-        tdebug!("sqlite", "export cursor exhausted: processed={}, expected={}", processed, total);
+        tdebug!(
+            "sqlite",
+            "export cursor exhausted: processed={}, expected={}",
+            processed,
+            total
+        );
         out.push('}');
         Ok(out)
     }
 
     fn import_from_json(&mut self, json_str: &str, mode: ImportMode) -> Result<(), String> {
-        let value: serde_json::Value = serde_json::from_str(json_str)
-            .map_err(|e| format!("parse json: {e}"))?;
+        let value: serde_json::Value =
+            serde_json::from_str(json_str).map_err(|e| format!("parse json: {e}"))?;
 
         let records_map: HashMap<String, HashMap<String, u64>> = match value["records"] {
             serde_json::Value::Object(ref obj) => {
@@ -446,7 +551,7 @@ impl DatabaseBackend for SqliteBackend {
                 for item in arr {
                     let date = item["date"].as_str().map(String::from);
                     let key = item["key"].as_str().map(String::from);
-                    let count = item["count"].as_i64().unwrap_or(0) as u64;
+                    let count = item["count"].as_i64().and_then(validate_count).unwrap_or(0);
                     if let (Some(date), Some(key)) = (date, key) {
                         map.entry(date).or_default().insert(key, count);
                     }
@@ -458,9 +563,15 @@ impl DatabaseBackend for SqliteBackend {
                 map
             }
             _ => {
-                return Err("Import JSON 'records' must be an object (nested) or array (flat)".to_string());
+                return Err(
+                    "Import JSON 'records' must be an object (nested) or array (flat)".to_string(),
+                );
             }
         };
+
+        for date in records_map.keys() {
+            validate_date(date)?;
+        }
 
         let total = records_map.len();
         let dates: Vec<&str> = records_map.keys().map(|s| s.as_str()).collect();
@@ -469,12 +580,16 @@ impl DatabaseBackend for SqliteBackend {
             if dates.is_empty() {
                 HashMap::new()
             } else {
-                let placeholders = std::iter::repeat_n("?", dates.len()).collect::<Vec<_>>().join(",");
+                let placeholders = std::iter::repeat_n("?", dates.len())
+                    .collect::<Vec<_>>()
+                    .join(",");
                 let sql = format!(
                     "SELECT date, key, count FROM {} WHERE date IN ({})",
                     self.table_name, placeholders
                 );
-                let mut stmt = self.conn.prepare_cached(&sql)
+                let mut stmt = self
+                    .conn
+                    .prepare_cached(&sql)
                     .map_err(|e| format!("prepare import existing: {e}"))?;
                 let params: Vec<&dyn rusqlite::ToSql> =
                     dates.iter().map(|d| d as &dyn rusqlite::ToSql).collect();
@@ -504,17 +619,22 @@ impl DatabaseBackend for SqliteBackend {
             self.table_name
         );
 
-        let tx = self.conn.transaction()
+        let tx = self
+            .conn
+            .transaction()
             .map_err(|e| format!("begin tx: {e}"))?;
 
         {
-            let mut del_stmt = tx.prepare_cached(&delete_sql)
+            let mut del_stmt = tx
+                .prepare_cached(&delete_sql)
                 .map_err(|e| format!("prepare delete: {e}"))?;
-            let mut ins_stmt = tx.prepare_cached(&insert_sql)
+            let mut ins_stmt = tx
+                .prepare_cached(&insert_sql)
                 .map_err(|e| format!("prepare insert: {e}"))?;
 
             for (date, incoming) in &records_map {
-                del_stmt.execute([date.as_str()])
+                del_stmt
+                    .execute([date.as_str()])
                     .map_err(|e| format!("delete: {e}"))?;
 
                 let data = if mode == ImportMode::Merge {
@@ -528,7 +648,8 @@ impl DatabaseBackend for SqliteBackend {
                 };
 
                 for (key, count) in &data {
-                    ins_stmt.execute([date.as_str(), key, &count.to_string()])
+                    ins_stmt
+                        .execute([date.as_str(), key, &count.to_string()])
                         .map_err(|e| format!("insert: {e}"))?;
                 }
             }
@@ -536,9 +657,11 @@ impl DatabaseBackend for SqliteBackend {
 
         tx.commit().map_err(|e| format!("commit: {e}"))?;
 
-        tinfo!("sqlite",
+        tinfo!(
+            "sqlite",
             "Imported {} date records from JSON (mode: {:?}).",
-            total, mode
+            total,
+            mode
         );
         Ok(())
     }

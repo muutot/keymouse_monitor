@@ -8,6 +8,12 @@ use windows_sys::Win32::UI::Input::*;
 /// Uses the double-call pattern (query size, then read data) with a
 /// 256-byte stack buffer — sufficient for standard mouse / keyboard HID reports.
 /// Returns `None` if the data is too large or the call fails.
+///
+/// # Safety
+///
+/// `lparam` must be a valid `LPARAM` from a `WM_INPUT` message.
+/// The caller must ensure the underlying `RAWINPUT` structure is
+/// still valid for the duration of this call.
 pub unsafe fn read_raw_input(lparam: LPARAM) -> Option<RAWINPUT> {
     let mut size: u32 = 0;
     GetRawInputData(

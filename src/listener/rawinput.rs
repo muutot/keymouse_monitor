@@ -1,6 +1,6 @@
 use std::mem;
 use std::ptr::null_mut;
-use std::sync::{atomic::AtomicUsize, Arc};
+use std::sync::{atomic::AtomicUsize, Arc, OnceLock};
 use std::thread;
 
 use parking_lot::RwLock;
@@ -21,9 +21,7 @@ use crate::{
     terror, tinfo,
 };
 
-static mut KEYBOARD_HOOK: HHOOK = null_mut();
-
-static mut CB: Option<common::CallbackData> = None;
+static CB: OnceLock<common::CallbackData> = OnceLock::new();
 
 unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 {
@@ -43,7 +41,7 @@ unsafe extern "system" fn keyboard_hook(code: i32, wparam: WPARAM, lparam: LPARA
         };
 
         if let Some(et) = event_type {
-            if let Some(ref cb) = CB {
+            if let Some(cb) = CB.get() {
                 common::process_event(&et, cb);
             }
         }
@@ -63,7 +61,7 @@ unsafe fn process_raw_input(lparam: LPARAM) {
         return;
     }
 
-    if let Some(ref cb) = CB {
+    if let Some(cb) = CB.get() {
         let data = mouse.Anonymous.Anonymous.usButtonData;
 
         if flags & RI_MOUSE_LEFT_BUTTON_DOWN != 0 {
@@ -124,47 +122,50 @@ pub fn start(
     change_tx: watch::Sender<()>,
     client_count: Arc<AtomicUsize>,
 ) {
-    thread::spawn(move || unsafe {
-        CB = Some(common::CallbackData {
+    thread::spawn(move || {
+        CB.set(common::CallbackData {
             data,
             change_tx,
             client_count,
-        });
+        })
+        .ok();
 
-        let hwnd = match keymouse_rawinput::create_message_window(
-            b"KeyMouseMonWndClass\0",
-            Some(DefWindowProcA),
-        ) {
-            Ok(h) => h,
-            Err(e) => {
-                terror!("rawinput", "{}", e);
+        unsafe {
+            let hwnd = match keymouse_rawinput::create_message_window(
+                b"KeyMouseMonWndClass\0",
+                Some(DefWindowProcA),
+            ) {
+                Ok(h) => h,
+                Err(e) => {
+                    terror!("rawinput", "{}", e);
+                    return;
+                }
+            };
+
+            if !keymouse_rawinput::register_raw_input_device(
+                hwnd,
+                0x01,
+                0x02,
+                RIDEV_INPUTSINK | RIDEV_NOLEGACY,
+            ) {
+                terror!("rawinput", "Failed to register raw input device");
                 return;
             }
-        };
 
-        if !keymouse_rawinput::register_raw_input_device(
-            hwnd,
-            0x01,
-            0x02,
-            RIDEV_INPUTSINK | RIDEV_NOLEGACY,
-        ) {
-            terror!("rawinput", "Failed to register raw input device");
-            return;
-        }
+            let hook = SetWindowsHookExA(WH_KEYBOARD_LL, Some(keyboard_hook), null_mut(), 0);
+            if hook.is_null() {
+                terror!("rawinput", "Failed to set keyboard hook");
+                return;
+            }
 
-        KEYBOARD_HOOK = SetWindowsHookExA(WH_KEYBOARD_LL, Some(keyboard_hook), null_mut(), 0);
-        if KEYBOARD_HOOK.is_null() {
-            terror!("rawinput", "Failed to set keyboard hook");
-            return;
-        }
-
-        let mut msg = mem::zeroed();
-        while GetMessageA(&mut msg, null_mut(), 0, 0) != 0 {
-            if msg.message == WM_INPUT {
-                process_raw_input(msg.lParam);
-            } else {
-                TranslateMessage(&msg);
-                DispatchMessageA(&msg);
+            let mut msg = mem::zeroed();
+            while GetMessageA(&mut msg, null_mut(), 0, 0) != 0 {
+                if msg.message == WM_INPUT {
+                    process_raw_input(msg.lParam);
+                } else {
+                    TranslateMessage(&msg);
+                    DispatchMessageA(&msg);
+                }
             }
         }
     });
