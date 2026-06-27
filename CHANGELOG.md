@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+- :bug: [frontend]: fix `API_URL` always resolving to `window.location.origin`
+  when the page is served from a static file server — remove the
+  `window.location.protocol && window.location.host` check so the default
+  `http://127.0.0.1:5000` is used instead, restoring compatibility with
+  separate static hosting
+
 ## [2.3.0]
 
 ### Features

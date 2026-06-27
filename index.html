@@ -1129,9 +1129,6 @@
     const params = new URLSearchParams(window.location.search);
     const fromQuery = params.get('api');
     if (fromQuery) return fromQuery.replace(/\/+$/, '');
-    if (window.location.protocol && window.location.host) {
-      return window.location.origin;
-    }
     return 'http://127.0.0.1:5000';
   })();
   let eventSource = null;
