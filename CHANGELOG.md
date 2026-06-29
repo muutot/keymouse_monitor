@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- :recycle: [database]: replace `is_mongodb` bool field with
+  `DatabaseBackend::backend_type()` trait method — backends report their own
+  type, eliminating duplicate state that could drift from the actual backend
 - :recycle: [log]: replace `tracing-appender` with a custom rolling writer so
   rotated log files follow `{stem}.{date}.{ext}` (`monitor.2026-06-29.log`)
   instead of `{name}.{date}` (`monitor.log.2026-06-29`)

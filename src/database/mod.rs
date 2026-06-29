@@ -114,7 +114,6 @@ pub trait DatabaseBackend: Send {
 pub struct Database {
     inner: Box<dyn DatabaseBackend>,
     fallback: Option<sqlite::SqliteBackend>,
-    is_mongodb: bool,
     sync_mode: FallbackSyncMode,
     disconnected: bool,
 }
@@ -124,7 +123,6 @@ impl Database {
         Database {
             inner: Box::new(sqlite::SqliteBackend::new(cfg)),
             fallback: None,
-            is_mongodb: false,
             sync_mode: FallbackSyncMode::default(),
             disconnected: false,
         }
@@ -149,7 +147,6 @@ impl Database {
         Database {
             inner: backend,
             fallback,
-            is_mongodb: true,
             sync_mode,
             disconnected: false,
         }
@@ -252,7 +249,7 @@ impl Database {
     /// Attempt to reconnect the primary and sync fallback.
     /// Returns true if reconnection and sync succeeded.
     pub fn try_reconnect(&mut self) -> bool {
-        if !self.is_mongodb {
+        if self.inner.backend_type() == BackendType::Sqlite {
             return true;
         }
         if !self.disconnected {
