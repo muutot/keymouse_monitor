@@ -1,7 +1,9 @@
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
-use tracing_appender::rolling;
+use chrono::Local;
 use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::time::FormatTime;
@@ -16,16 +18,99 @@ use crate::config::LogConfig;
 struct LocalTimer;
 impl FormatTime for LocalTimer {
     fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
-        write!(w, "{}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"))
+        write!(w, "{}", Local::now().format("%Y-%m-%d %H:%M:%S%.3f"))
     }
 }
 
-fn parse_rotation(s: &str) -> rolling::Rotation {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Rotation {
+    Never,
+    Minutely,
+    Hourly,
+    Daily,
+}
+
+fn parse_rotation(s: &str) -> Rotation {
     match s.to_lowercase().as_str() {
-        "hourly" => rolling::Rotation::HOURLY,
-        "never" => rolling::Rotation::NEVER,
-        "minutely" => rolling::Rotation::MINUTELY,
-        _ => rolling::Rotation::DAILY,
+        "hourly" => Rotation::Hourly,
+        "never" => Rotation::Never,
+        "minutely" => Rotation::Minutely,
+        _ => Rotation::Daily,
+    }
+}
+
+fn date_suffix(rotation: Rotation) -> String {
+    let now = Local::now();
+    match rotation {
+        Rotation::Never => String::new(),
+        Rotation::Daily => format!(".{}", now.format("%Y-%m-%d")),
+        Rotation::Hourly => format!(".{}", now.format("%Y-%m-%d-%H")),
+        Rotation::Minutely => format!(".{}", now.format("%Y-%m-%d-%H-%M")),
+    }
+}
+
+#[derive(Clone)]
+struct RollingFileWriter {
+    inner: std::sync::Arc<Mutex<RollingState>>,
+}
+
+struct RollingState {
+    dir: PathBuf,
+    stem: String,
+    ext: String,
+    rotation: Rotation,
+    file: Option<(String, fs::File)>,
+}
+
+impl RollingFileWriter {
+    fn new(rotation: Rotation, dir: PathBuf, stem: String, ext: String) -> Self {
+        Self {
+            inner: std::sync::Arc::new(Mutex::new(RollingState {
+                dir,
+                stem,
+                ext,
+                rotation,
+                file: None,
+            })),
+        }
+    }
+}
+
+impl Write for RollingFileWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut state = self.inner.lock().unwrap();
+        let suffix = date_suffix(state.rotation);
+
+        if state.file.as_ref().map_or(true, |(cur, _)| *cur != suffix) {
+            let filename = if suffix.is_empty() {
+                format!("{}.{}", state.stem, state.ext)
+            } else {
+                format!("{}{}.{}", state.stem, suffix, state.ext)
+            };
+            let path = state.dir.join(&filename);
+
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+
+            let file = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)?;
+
+            state.file = Some((suffix, file));
+        }
+
+        state.file.as_mut().unwrap().1.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let mut state = self.inner.lock().unwrap();
+        if let Some((_, ref mut file)) = state.file {
+            file.flush()
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -47,18 +132,24 @@ pub fn init_logger(config: &LogConfig) {
         let _ = fs::create_dir_all(parent);
     }
 
-    let log_dir = log_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .to_str()
-        .unwrap_or(".");
-    let log_name = log_path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("monitor.log");
-
     let rotation = parse_rotation(&config.rotation);
-    let file_appender = rolling::RollingFileAppender::new(rotation, log_dir, log_name);
+    let dir = log_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    let stem = log_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("monitor")
+        .to_string();
+    let ext = log_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("log")
+        .to_string();
+
+    let file_appender = RollingFileWriter::new(rotation, dir, stem, ext);
+    let make_writer = move || file_appender.clone();
 
     let use_app_only = config.level.to_lowercase() != "trace";
     let default_directive = if use_app_only { "info" } else { "trace" };
@@ -78,7 +169,7 @@ pub fn init_logger(config: &LogConfig) {
     let file_layer = fmt::layer()
         .with_timer(LocalTimer)
         .with_target(false)
-        .with_writer(file_appender)
+        .with_writer(make_writer)
         .with_ansi(false)
         .with_filter(filter.clone());
 

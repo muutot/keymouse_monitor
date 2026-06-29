@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- :recycle: [log]: replace `tracing-appender` with a custom rolling writer so
+  rotated log files follow `{stem}.{date}.{ext}` (`monitor.2026-06-29.log`)
+  instead of `{name}.{date}` (`monitor.log.2026-06-29`)
 - :bug: [frontend]: fix `API_URL` always resolving to `window.location.origin`
   when the page is served from a static file server — remove the
   `window.location.protocol && window.location.host` check so the default
